@@ -136,6 +136,36 @@ Tool mapping:
 | `info`, `stats` | `get_post_info` |
 | `view`, `like`, `bookmark`, `share`, `comment` | `record_post_event` |
 
+## Planned Enhancements
+
+These are requested workflow features for a future release and are currently
+documented here for implementation:
+
+- Search DEV.to posts from a prompt:
+  - Command concept: `/dev.io search <query>`
+  - Goal: find matching posts from your DEV.to account.
+- Summarize a post:
+  - Command concept: `/dev.io summarize <post>`
+  - Goal: return a concise summary and extracted key points.
+- Find related posts from a prompt or conversation:
+  - Command concept: `/dev.io recommend <prompt>` or `/dev.io related <post>`
+  - Goal: return ranked related posts from local drafts and remote posts.
+- Read and compare two topics/posts:
+  - Command concept: `/dev.io compare <post-a> <post-b>`
+  - Goal: output differences, overlaps, and decision guidance.
+- Update a remote DEV.to post:
+  - Command concept: `/dev.io update <post>`
+  - Goal: edit an already published remote article by article ID/link.
+- Delete a post from my DEV.to account:
+  - Command concept: `/dev.io delete <post>`
+  - Goal: remove a published article after explicit confirmation.
+
+Current implementation status:
+- Implemented now: publish, local/offline list, read, info, local events, and
+  local/in-account listing.
+- Planned in this section: search, summarize, recommend/related, compare,
+  update, and delete.
+
 ## Post format
 
 Posts are written as Markdown files with frontmatter-like metadata in the body:
