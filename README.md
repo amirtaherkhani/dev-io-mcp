@@ -119,16 +119,6 @@ Payload:
 
 If your `dev.io` site already has an SDK, send me its package name or docs and I can swap the HTTP adapter to the official SDK.
 
-## Feature list (implemented)
-
-- local-first publish workflow with optional DEV.to remote publish
-- local and remote list views
-- local/remote search
-- post summary extraction
-- related content discovery by prompt
-- topic comparison
-- post update and post deletion
-
 ## Command intent examples
 
 - list posts locally: `source: "local"`
