@@ -12,12 +12,29 @@ These are the practical skills the project expects from a contributor or agent.
 
 ## Agent skills
 
-- `skills/conversation-to-post/SKILL.md`: summarize and publish safe conversation results.
-- `skills/mcp-server-maintenance/SKILL.md`: preserve MCP tools, resources, schemas, and transport behavior.
-- `skills/metrics-adapter/SKILL.md`: maintain local metrics and the optional remote adapter.
-- `skills/verify-mcp-server/SKILL.md`: run static checks and MCP protocol smoke tests.
-- `skills/runtime-modes/SKILL.md`: maintain the Kubernetes-only HTTP deployment and Ingress.
-- `skills/dev-io/SKILL.md`: route `/dev.io` and `$dev-io` commands to MCP tools safely.
+| Skill file | Scope | Why it matters |
+| --- | --- | --- |
+| `skills/conversation-to-post/SKILL.md` | Summarize AI conversations and prepare publishable posts | Keeps generated content safe and publish-ready |
+| `skills/mcp-server-maintenance/SKILL.md` | Preserve MCP tools, resources, schemas, and transport behavior | Prevents contract regressions across Claude/Codex hosts |
+| `skills/metrics-adapter/SKILL.md` | Maintain local metrics and optional remote adapter logic | Keeps event counts and sync behavior reliable |
+| `skills/verify-mcp-server/SKILL.md` | Run static checks and MCP smoke tests | Catches protocol issues before release |
+| `skills/runtime-modes/SKILL.md` | Maintain Kubernetes-only HTTP deployment and ingress | Ensures HTTPS, TLS, and PVC-backed state remain consistent |
+| `/Users/mac/.codex/skills/dev-io/SKILL.md` | Route `/dev.io` and `$dev-io` commands to MCP tools | Keeps command intent and tool mapping correct |
+
+## MCP tool capability map
+
+| Capability | Tool | Scope |
+| --- | --- | --- |
+| Publish | `publish_post` | local + optional remote publish (`publish_to_remote`) |
+| Listing | `list_posts` | local, remote, both |
+| Read | `read_post` | local markdown |
+| Info | `get_post_info` | local file metadata + local metrics |
+| Search | `search_post` | local, remote, both |
+| Summarize | `summarize_post` | local or remote |
+| Related content | `find_related_posts` | local or remote |
+| Compare | `compare_posts` | local or remote |
+| Update | `update_post` | local or remote |
+| Delete | `delete_post` | local or remote |
 
 ## Runtime modes
 
@@ -33,8 +50,14 @@ These are the practical skills the project expects from a contributor or agent.
 
 ## Host commands
 
-- Claude Code: `/dev.io publish ...`, `/dev.io list`, `/dev.io show <file>`, and `/dev.io info <file>`.
-- Codex: `$dev-io publish ...`, `$dev-io list`, `$dev-io show <file>`, and `$dev-io info <file>`.
+| Host | Example command | Tool target |
+| --- | --- | --- |
+| Claude Code | `/dev.io publish ...` | `publish_post` |
+| Claude Code | `/dev.io list`, `/dev.io search`, `/dev.io summarize`, `/dev.io related`, `/dev.io compare` | `list_posts`, `search_post`, `summarize_post`, `find_related_posts`, `compare_posts` |
+| Claude Code | `/dev.io update`, `/dev.io delete`, `/dev.io read`, `/dev.io info` | `update_post`, `delete_post`, `read_post`, `get_post_info` |
+| Codex | `$dev-io publish ...` | `publish_post` |
+| Codex | `$dev-io list`, `$dev-io search`, `$dev-io summarize`, `$dev-io related`, `$dev-io compare` | `list_posts`, `search_post`, `summarize_post`, `find_related_posts`, `compare_posts` |
+| Codex | `$dev-io update`, `$dev-io delete`, `$dev-io show`, `$dev-io info` | `update_post`, `delete_post`, `read_post`, `get_post_info` |
 - Both hosts connect to `https://dev-io-mcp.dev.local/mcp`.
 
 ## Quality bar
