@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -375,10 +376,11 @@ async function syncMetricsToRemote(file: string, metrics: PostMetrics): Promise<
   return { synced: true, mode: "remote" };
 }
 
-const server = new McpServer({
+function createMcpServer(): McpServer {
+  const server = new McpServer({
   name: "dev-io",
   version: "0.1.0",
-});
+  });
 
 server.registerTool(
   "publish_post",
@@ -613,6 +615,9 @@ server.registerResource(
   },
 );
 
+  return server;
+}
+
 async function main(): Promise<void> {
   const transportMode = process.env.MCP_TRANSPORT ?? "http";
   if (transportMode !== "http") {
@@ -629,10 +634,10 @@ async function runHttpServer(): Promise<void> {
     throw new Error(`Invalid MCP_PORT: ${process.env.MCP_PORT ?? process.env.PORT}`);
   }
 
-  const transport = new StreamableHTTPServerTransport({
-    sessionIdGenerator: () => randomUUID(),
-  });
-  await server.connect(transport);
+  const sessions = new Map<
+    string,
+    { server: McpServer; transport: StreamableHTTPServerTransport }
+  >();
 
   const readJsonBody = async (request: IncomingMessage): Promise<unknown> => {
     const chunks: Buffer[] = [];
@@ -658,7 +663,7 @@ async function runHttpServer(): Promise<void> {
 
     if (requestUrl.pathname === "/readyz" && request.method === "GET") {
       response.writeHead(200, { "content-type": "application/json" });
-      response.end(JSON.stringify({ status: server.isConnected() ? "ready" : "starting" }));
+      response.end(JSON.stringify({ status: "ready" }));
       return;
     }
 
@@ -670,6 +675,45 @@ async function runHttpServer(): Promise<void> {
 
     try {
       const parsedBody = request.method === "POST" ? await readJsonBody(request) : undefined;
+      const sessionId = request.headers["mcp-session-id"];
+      const session = typeof sessionId === "string" ? sessions.get(sessionId) : undefined;
+
+      if (session) {
+        await session.transport.handleRequest(request, response, parsedBody);
+        return;
+      }
+
+      if (request.method !== "POST" || !isInitializeRequest(parsedBody)) {
+        response.writeHead(400, { "content-type": "application/json" });
+        response.end(
+          JSON.stringify({
+            jsonrpc: "2.0",
+            error: {
+              code: -32000,
+              message: "Bad Request: a valid MCP session is required",
+            },
+            id: null,
+          }),
+        );
+        return;
+      }
+
+      const mcpServer = createMcpServer();
+      let transport: StreamableHTTPServerTransport;
+      transport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: () => randomUUID(),
+        onsessioninitialized: (initializedSessionId) => {
+          sessions.set(initializedSessionId, { server: mcpServer, transport });
+        },
+      });
+      transport.onclose = () => {
+        const initializedSessionId = transport.sessionId;
+        if (initializedSessionId) {
+          sessions.delete(initializedSessionId);
+        }
+      };
+
+      await mcpServer.connect(transport);
       await transport.handleRequest(request, response, parsedBody);
     } catch (error) {
       console.error("dev.io MCP HTTP request failed:", error);
@@ -682,7 +726,11 @@ async function runHttpServer(): Promise<void> {
 
   const shutdown = async (signal: string): Promise<void> => {
     console.error(`dev.io MCP HTTP server received ${signal}`);
-    await transport.close();
+    for (const [sessionId, session] of sessions) {
+      await session.transport.close();
+      await session.server.close();
+      sessions.delete(sessionId);
+    }
     await new Promise<void>((resolve, reject) => {
       httpServer.close((error) => (error ? reject(error) : resolve()));
     });
