@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.DS_Store
+*.log
+
+# Runtime metrics are local state and may contain private analytics.
+data/post-metrics.json
