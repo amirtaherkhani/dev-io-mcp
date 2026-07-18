@@ -22,7 +22,7 @@ Use this skill when a user asks to publish, summarize, or document an AI convers
 - Use a topic that describes the result, not the model brand.
 - Prefer 2-5 lowercase, stable tags such as `mcp`, `typescript`, `codex`, or `claude`.
 - Never include credentials or unreviewed private conversation content.
-- Publishing means local Markdown creation unless a verified remote adapter is configured and reports success.
+- Publishing means local Markdown creation unless `DEV_TO_PUBLISH=true` is explicitly configured and the verified DEV.to/Forem adapter reports success.
 
 ## Example tool intent
 

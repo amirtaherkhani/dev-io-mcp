@@ -9,6 +9,10 @@ data:
   MCP_TRANSPORT: {{ .Values.transport.mode | quote }}
   MCP_HOST: {{ .Values.transport.host | quote }}
   MCP_PORT: {{ .Values.transport.port | quote }}
+  DEV_TO_PUBLISH: {{ .Values.devTo.publish | quote }}
+  DEV_TO_API_BASE_URL: {{ .Values.devTo.apiBaseUrl | quote }}
+  DEV_TO_PUBLISHED: {{ .Values.devTo.published | quote }}
+  DEV_TO_USER_AGENT: {{ .Values.devTo.userAgent | quote }}
   {{- if .Values.remote.enabled }}
   DEV_IO_API_BASE_URL: {{ required "remote.apiBaseUrl is required when remote.enabled=true" .Values.remote.apiBaseUrl | quote }}
   {{- end }}

@@ -66,6 +66,23 @@ helm upgrade --install dev-io-mcp ./charts/dev-io-mcp \
 
 For a development-only Secret created by Helm, use `remote.createSecret=true` and pass `remote.apiToken` through a private values file. Do not put that value in a committed values file or shell history in shared environments.
 
+## Publish to DEV.to
+
+Enable the official DEV.to/Forem publisher with an existing Secret:
+
+```bash
+helm upgrade --install dev-io-mcp ./charts/dev-io-mcp \
+  --namespace dev-io \
+  --set devTo.publish=true \
+  --set devTo.apiBaseUrl=https://dev.to \
+  --set devTo.existingSecret=dev-to-api \
+  --set devTo.existingSecretKey=api-key
+```
+
+The Secret must contain a DEV.to API key. `publish_post` will create the local Markdown file, then call `POST /api/articles` from the [Forem API](https://developers.forem.com/api/v0). The returned article ID and URL are stored in `data/remote-posts.json`.
+
+For development only, `devTo.createSecret=true` can create a Secret from a private values file. Never commit `devTo.apiKey`.
+
 ## Optional features
 
 Examples:

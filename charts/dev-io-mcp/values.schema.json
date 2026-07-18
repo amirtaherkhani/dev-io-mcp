@@ -45,6 +45,20 @@
       },
       "required": ["enabled", "apiBaseUrl", "existingSecret", "existingSecretKey", "createSecret", "apiToken"]
     },
+    "devTo": {
+      "type": "object",
+      "properties": {
+        "publish": { "type": "boolean" },
+        "apiBaseUrl": { "type": "string", "minLength": 1 },
+        "existingSecret": { "type": "string" },
+        "existingSecretKey": { "type": "string", "minLength": 1 },
+        "createSecret": { "type": "boolean" },
+        "apiKey": { "type": "string" },
+        "published": { "type": "boolean" },
+        "userAgent": { "type": "string", "minLength": 1 }
+      },
+      "required": ["publish", "apiBaseUrl", "existingSecret", "existingSecretKey", "createSecret", "apiKey", "published", "userAgent"]
+    },
     "persistence": {
       "type": "object",
       "properties": {

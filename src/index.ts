@@ -14,6 +14,7 @@ const projectRoot = path.resolve(__dirname, "..");
 const postsDir = path.join(projectRoot, "posts");
 const dataDir = path.join(projectRoot, "data");
 const metricsFile = path.join(dataDir, "post-metrics.json");
+const remotePostsFile = path.join(dataDir, "remote-posts.json");
 
 type PostMetrics = {
   views: number;
@@ -41,10 +42,51 @@ type RemoteDevIoAdapterConfig = {
   token: string | null;
 };
 
+type DevToPublisherConfig = {
+  enabled: boolean;
+  baseUrl: string;
+  apiKey: string | null;
+  userAgent: string;
+  published: boolean;
+};
+
+type RemotePostLink = {
+  platform: "dev.to";
+  baseUrl: string;
+  articleId: number | string;
+  url: string | null;
+  published: boolean;
+  publishedAt: string;
+};
+
+type RemoteArticleSnapshot = {
+  platform: "dev.to";
+  articleId: number | string;
+  title?: string;
+  url?: string;
+  published?: boolean;
+  views?: number;
+  likes?: number;
+  comments?: number;
+  fetchedAt: string;
+};
+
 function loadRemoteAdapterConfig(): RemoteDevIoAdapterConfig {
   return {
     baseUrl: process.env.DEV_IO_API_BASE_URL ?? null,
     token: process.env.DEV_IO_API_TOKEN ?? null,
+  };
+}
+
+function loadDevToPublisherConfig(): DevToPublisherConfig {
+  return {
+    enabled: process.env.DEV_TO_PUBLISH === "true",
+    baseUrl: process.env.DEV_TO_API_BASE_URL ?? "https://dev.to",
+    apiKey: process.env.DEV_TO_API_KEY ?? null,
+    userAgent:
+      process.env.DEV_TO_USER_AGENT ??
+      "dev-io-mcp/0.1.0 (https://github.com/amirtaherkhani/dev-io-mcp)",
+    published: process.env.DEV_TO_PUBLISHED !== "false",
   };
 }
 
@@ -139,6 +181,148 @@ async function writeAllMetrics(metrics: Record<string, PostMetrics>): Promise<vo
   await fs.writeFile(metricsFile, JSON.stringify(metrics, null, 2), "utf8");
 }
 
+async function readRemotePostLinks(): Promise<Record<string, RemotePostLink>> {
+  await ensureDataDir();
+  try {
+    const raw = await fs.readFile(remotePostsFile, "utf8");
+    return JSON.parse(raw) as Record<string, RemotePostLink>;
+  } catch {
+    return {};
+  }
+}
+
+async function writeRemotePostLinks(links: Record<string, RemotePostLink>): Promise<void> {
+  await ensureDataDir();
+  await fs.writeFile(remotePostsFile, JSON.stringify(links, null, 2), "utf8");
+}
+
+function articleUrl(baseUrl: string, article: Record<string, unknown>): string | null {
+  if (typeof article.url === "string") {
+    return article.url;
+  }
+
+  if (typeof article.path === "string") {
+    return new URL(article.path, baseUrl).toString();
+  }
+
+  return null;
+}
+
+async function publishPostToDevTo(
+  fileName: string,
+  input: PublishPostInput,
+  bodyMarkdown: string,
+): Promise<{ published: boolean; mode: string; articleId?: number | string; url?: string | null }> {
+  const config = loadDevToPublisherConfig();
+  if (!config.enabled) {
+    return { published: false, mode: "local" };
+  }
+
+  if (!config.apiKey) {
+    throw new Error("DEV_TO_API_KEY is required when DEV_TO_PUBLISH=true");
+  }
+
+  const tags = (input.tags?.length ? input.tags : ["mcp", "ai", "dev-io"]).slice(0, 4);
+  const response = await fetch(new URL("/api/articles", config.baseUrl), {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      accept: "application/vnd.forem.api-v1+json",
+      "api-key": config.apiKey,
+      "user-agent": config.userAgent,
+    },
+    body: JSON.stringify({
+      article: {
+        title: input.title,
+        body_markdown: bodyMarkdown,
+        published: config.published,
+        description: input.summary.trim().slice(0, 160),
+        tags,
+      },
+    }),
+  });
+
+  const responseText = await response.text();
+  let article: Record<string, unknown>;
+  try {
+    article = JSON.parse(responseText) as Record<string, unknown>;
+  } catch {
+    article = {};
+  }
+
+  if (!response.ok) {
+    const detail = responseText.replace(/\s+/g, " ").slice(0, 300);
+    throw new Error(`DEV.to publish failed: ${response.status} ${response.statusText}${detail ? ` - ${detail}` : ""}`);
+  }
+
+  const articleId = article.id;
+  if (typeof articleId !== "number" && typeof articleId !== "string") {
+    throw new Error("DEV.to publish response did not include an article id");
+  }
+
+  const url = articleUrl(config.baseUrl, article);
+  const links = await readRemotePostLinks();
+  links[fileName] = {
+    platform: "dev.to",
+    baseUrl: config.baseUrl,
+    articleId,
+    url,
+    published: config.published,
+    publishedAt: new Date().toISOString(),
+  };
+  await writeRemotePostLinks(links);
+
+  return { published: true, mode: "dev.to", articleId, url };
+}
+
+async function fetchRemoteArticleSnapshot(fileName: string): Promise<RemoteArticleSnapshot | null> {
+  const links = await readRemotePostLinks();
+  const link = links[fileName];
+  if (!link) {
+    return null;
+  }
+
+  const config = loadDevToPublisherConfig();
+  try {
+    const response = await fetch(new URL(`/api/articles/${link.articleId}`, link.baseUrl), {
+      headers: {
+        accept: "application/vnd.forem.api-v1+json",
+        "user-agent": config.userAgent,
+        ...(config.apiKey ? { "api-key": config.apiKey } : {}),
+      },
+    });
+
+    if (!response.ok) {
+      return {
+        platform: link.platform,
+        articleId: link.articleId,
+        url: link.url ?? undefined,
+        fetchedAt: new Date().toISOString(),
+      };
+    }
+
+    const article = (await response.json()) as Record<string, unknown>;
+    return {
+      platform: link.platform,
+      articleId: link.articleId,
+      title: typeof article.title === "string" ? article.title : undefined,
+      url: articleUrl(link.baseUrl, article) ?? link.url ?? undefined,
+      published: typeof article.published === "boolean" ? article.published : link.published,
+      views: typeof article.page_views_count === "number" ? article.page_views_count : undefined,
+      likes: typeof article.positive_reactions_count === "number" ? article.positive_reactions_count : undefined,
+      comments: typeof article.comments_count === "number" ? article.comments_count : undefined,
+      fetchedAt: new Date().toISOString(),
+    };
+  } catch {
+    return {
+      platform: link.platform,
+      articleId: link.articleId,
+      url: link.url ?? undefined,
+      fetchedAt: new Date().toISOString(),
+    };
+  }
+}
+
 async function getMetrics(file: string): Promise<PostMetrics> {
   const metrics = await readAllMetrics();
   return metrics[file] ?? metricsForFile(file);
@@ -200,7 +384,7 @@ const server = new McpServer({
 server.registerTool(
   "publish_post",
   {
-    description: "Publish a dev.io Markdown post",
+    description: "Write a Markdown post locally and optionally publish it to DEV.to using the official Forem API",
     inputSchema: {
       title: z.string(),
       summary: z.string(),
@@ -217,6 +401,7 @@ server.registerTool(
     const filePath = path.join(postsDir, fileName);
     const body = renderPost(input);
     await fs.writeFile(filePath, body, "utf8");
+    const remote = await publishPostToDevTo(fileName, input, body);
 
     return {
       content: [
@@ -227,6 +412,7 @@ server.registerTool(
               ok: true,
               file: filePath,
               title: input.title,
+              remote,
             },
             null,
             2,
@@ -281,18 +467,21 @@ server.registerTool(
     await ensurePostsDir();
     const filePath = resolvePostPath(file);
     const stat = await fs.stat(filePath);
-    const metrics = await getMetrics(path.basename(filePath));
+    const fileName = path.basename(filePath);
+    const metrics = await getMetrics(fileName);
+    const remote = await fetchRemoteArticleSnapshot(fileName);
     return {
       content: [
         {
           type: "text",
           text: JSON.stringify(
             {
-              file: path.basename(filePath),
+              file: fileName,
               size: stat.size,
               createdAt: stat.birthtime.toISOString(),
               modifiedAt: stat.mtime.toISOString(),
               metrics,
+              remote,
             },
             null,
             2,

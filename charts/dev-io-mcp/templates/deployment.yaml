@@ -1,6 +1,12 @@
 {{- if and .Values.remote.existingSecret .Values.remote.createSecret }}
 {{- fail "remote.existingSecret and remote.createSecret cannot both be set" }}
 {{- end }}
+{{- if and .Values.devTo.existingSecret .Values.devTo.createSecret }}
+{{- fail "devTo.existingSecret and devTo.createSecret cannot both be set" }}
+{{- end }}
+{{- if and .Values.devTo.publish (not .Values.devTo.existingSecret) (not .Values.devTo.createSecret) }}
+{{- fail "devTo.existingSecret or devTo.createSecret is required when devTo.publish=true" }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -48,7 +54,7 @@ spec:
             {{- with .Values.extraEnvFrom }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
-          {{- if or (and .Values.remote.enabled .Values.remote.existingSecret) (and .Values.remote.enabled .Values.remote.createSecret) .Values.extraEnv }}
+          {{- if or (and .Values.remote.enabled .Values.remote.existingSecret) (and .Values.remote.enabled .Values.remote.createSecret) (and .Values.devTo.publish .Values.devTo.existingSecret) (and .Values.devTo.publish .Values.devTo.createSecret) .Values.extraEnv }}
           env:
             {{- if and .Values.remote.enabled .Values.remote.existingSecret }}
             - name: DEV_IO_API_TOKEN
@@ -62,6 +68,19 @@ spec:
                 secretKeyRef:
                   name: {{ include "dev-io-mcp.fullname" . }}-remote
                   key: {{ .Values.remote.existingSecretKey }}
+            {{- end }}
+            {{- if and .Values.devTo.publish .Values.devTo.existingSecret }}
+            - name: DEV_TO_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.devTo.existingSecret }}
+                  key: {{ .Values.devTo.existingSecretKey }}
+            {{- else if and .Values.devTo.publish .Values.devTo.createSecret }}
+            - name: DEV_TO_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "dev-io-mcp.fullname" . }}-devto
+                  key: {{ .Values.devTo.existingSecretKey }}
             {{- end }}
             {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}

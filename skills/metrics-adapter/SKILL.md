@@ -27,3 +27,4 @@ The current adapter sends `POST /api/posts/metrics` with `{ file, metrics }`. Tr
 - Do not log bearer tokens or conversation content.
 - Test both local mode and configured remote failure behavior.
 - Do not commit `data/post-metrics.json`.
+- Do not commit `data/remote-posts.json`; it is local runtime mapping state.

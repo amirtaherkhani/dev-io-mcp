@@ -9,6 +9,11 @@ services:
       MCP_PORT: 3000
       DEV_IO_API_BASE_URL: ${DEV_IO_API_BASE_URL:-}
       DEV_IO_API_TOKEN: ${DEV_IO_API_TOKEN:-}
+      DEV_TO_PUBLISH: ${DEV_TO_PUBLISH:-false}
+      DEV_TO_API_BASE_URL: ${DEV_TO_API_BASE_URL:-https://dev.to}
+      DEV_TO_API_KEY: ${DEV_TO_API_KEY:-}
+      DEV_TO_PUBLISHED: ${DEV_TO_PUBLISHED:-true}
+      DEV_TO_USER_AGENT: ${DEV_TO_USER_AGENT:-dev-io-mcp/0.1.0}
     ports:
       - "3000:3000"
     volumes:

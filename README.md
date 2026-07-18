@@ -12,7 +12,7 @@ It focuses on one workflow:
 
 ## What it exposes
 
-- `publish_post` tool: write a Markdown post to `posts/`
+- `publish_post` tool: write a Markdown post to `posts/` and optionally publish it to DEV.to
 - `list_posts` tool: enumerate stored posts
 - `read_post` tool: read a single post
 - `get_post_info` tool: read file metadata and stored metrics
@@ -188,3 +188,22 @@ If your `dev.io` site already has an SDK, send me its package name or docs and I
 This repository does not claim an official dev.io SDK or public API. The remote adapter is deliberately isolated behind an HTTP contract so it can be replaced when the real dev.io API or SDK is identified. Markdown publishing itself remains local until that contract is provided.
 
 See [`.env.example`](.env.example) for the connection variables.
+
+## Publish to DEV.to
+
+The official [DEV.to/Forem API](https://developers.forem.com/api/v0) supports creating articles with `POST /api/articles`. Enable it explicitly:
+
+```bash
+DEV_TO_PUBLISH=true
+DEV_TO_API_BASE_URL=https://dev.to
+DEV_TO_API_KEY=your-dev-to-api-key
+DEV_TO_PUBLISHED=true
+```
+
+When enabled, `publish_post` still writes the local Markdown file, then sends the same Markdown body to the official DEV.to API. The result includes the remote article ID and URL, and the mapping is stored in `data/remote-posts.json`.
+
+`get_post_info` uses that mapping to fetch remote DEV.to metrics such as page views, positive reactions, and comments. Local metrics remain separate because DEV.to does not provide a write API for arbitrary likes or views.
+
+The API key must be generated in your DEV.to account settings and should be provided through a secret or environment variable, never committed to Git. The adapter also supports Forem-compatible instances by changing `DEV_TO_API_BASE_URL`.
+
+This is a DEV.to/Forem integration. It is not proof that the unrelated `dev.io` domain exposes the same API.

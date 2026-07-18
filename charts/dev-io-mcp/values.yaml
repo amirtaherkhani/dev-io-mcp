@@ -48,6 +48,16 @@ remote:
   createSecret: false
   apiToken: ""
 
+devTo:
+  publish: false
+  apiBaseUrl: https://dev.to
+  existingSecret: ""
+  existingSecretKey: api-key
+  createSecret: false
+  apiKey: ""
+  published: true
+  userAgent: dev-io-mcp/0.1.0
+
 persistence:
   posts:
     enabled: true

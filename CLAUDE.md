@@ -22,6 +22,8 @@ This repository contains a local-first TypeScript MCP server for converting Clau
 
 The current `publish_post` tool writes locally. The optional remote adapter only synchronizes metrics when `DEV_IO_API_BASE_URL` is configured. Do not imply that a website post was created without a verified remote API response.
 
+DEV.to publishing is a separate explicit opt-in through `DEV_TO_PUBLISH=true`. It targets the official DEV.to/Forem article API, not an assumed `dev.io` API.
+
 ## Runtime modes
 
 - Standalone: default stdio transport with `npm start`.
