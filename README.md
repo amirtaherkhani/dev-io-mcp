@@ -119,6 +119,7 @@ These commands are translated by the installed skill into MCP tool calls:
 /dev.io publish this conversation as "Deploy an MCP Server to Kubernetes"
 /dev.io post the current document with tags mcp, kubernetes
 /dev.io list posts
+/dev.io list remote posts
 /dev.io show deploy-an-mcp-server-123.md
 /dev.io info deploy-an-mcp-server-123.md
 /dev.io like deploy-an-mcp-server-123.md
@@ -129,7 +130,8 @@ Tool mapping:
 | Command | MCP tool |
 | --- | --- |
 | `publish`, `post` | `publish_post` |
-| `list` | `list_posts` |
+| `list`, `list local`, `list offline` | `list_posts` |
+| `list remote` | `list_remote_posts` |
 | `read`, `show` | `read_post` |
 | `info`, `stats` | `get_post_info` |
 | `view`, `like`, `bookmark`, `share`, `comment` | `record_post_event` |

@@ -14,7 +14,8 @@ Interpret these command forms as follows:
 | User command | MCP action |
 | --- | --- |
 | `/dev.io publish ...`, `/dev.io post ...`, `$dev-io publish ...` | `publish_post` |
-| `/dev.io list`, `/dev.io list posts`, `$dev-io list posts` | `list_posts` |
+| `/dev.io list`, `/dev.io list posts`, `/dev.io list local`, `/dev.io list offline`, `$dev-io list posts` | `list_posts` |
+| `/dev.io list remote`, `/dev.io list dev.to`, `/dev.io list dev.io`, `$dev-io list remote posts` | `list_remote_posts` |
 | `/dev.io read <file>`, `/dev.io show <file>` | `read_post` |
 | `/dev.io info <file>`, `/dev.io stats <file>` | `get_post_info` |
 | `/dev.io view <file>`, `/dev.io like <file>`, `/dev.io comment <file>` | `record_post_event` |
@@ -36,6 +37,7 @@ Example intent:
 ## List/read/info
 
 - Use `list_posts` for a collection. Do not invent posts or metrics.
+- Use `list_remote_posts` for the live DEV.to account list with real article IDs and remote metrics.
 - Use `read_post` when the user asks for the Markdown content.
 - Use `get_post_info` for file size, timestamps, local metrics, and the optional DEV.to snapshot.
 - Ask for the file name when a command such as `info` is ambiguous.

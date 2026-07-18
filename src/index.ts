@@ -71,6 +71,22 @@ type RemoteArticleSnapshot = {
   fetchedAt: string;
 };
 
+type RemotePostListItem = {
+  platform: "dev.to";
+  articleId: number | string;
+  title: string;
+  description?: string;
+  url: string | null;
+  slug: string | null;
+  tags: string[];
+  published: boolean;
+  createdAt: string | null;
+  updatedAt: string | null;
+  views?: number;
+  likes?: number;
+  comments?: number;
+};
+
 function loadRemoteAdapterConfig(): RemoteDevIoAdapterConfig {
   return {
     baseUrl: process.env.DEV_IO_API_BASE_URL ?? null,
@@ -144,6 +160,56 @@ async function listPostFiles(): Promise<string[]> {
     .filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
     .map((entry) => entry.name)
     .sort((a, b) => a.localeCompare(b));
+}
+
+async function listRemotePostsFromDevTo(limit = 100): Promise<RemotePostListItem[]> {
+  const config = loadDevToPublisherConfig();
+  if (!config.apiKey) {
+    throw new Error("DEV_TO_API_KEY is required to list remote DEV.to posts");
+  }
+
+  const url = new URL("/api/articles/me", config.baseUrl);
+  url.searchParams.set("per_page", String(Math.min(Math.max(limit, 1), 1000)));
+
+  const response = await fetch(url, {
+    headers: {
+      accept: "application/vnd.forem.api-v1+json",
+      "user-agent": config.userAgent,
+      "api-key": config.apiKey,
+    },
+  });
+
+  if (!response.ok) {
+    const detail = (await response.text()).replace(/\s+/g, " ").slice(0, 300);
+    throw new Error(`DEV.to list failed: ${response.status} ${response.statusText}${detail ? ` - ${detail}` : ""}`);
+  }
+
+  const payload = (await response.json()) as unknown;
+  if (!Array.isArray(payload)) {
+    return [];
+  }
+
+  return payload.map((item) => {
+    const article = item as Record<string, unknown>;
+    return {
+      platform: "dev.to",
+      articleId:
+        typeof article.id === "number" || typeof article.id === "string" ? article.id : "unknown",
+      title: typeof article.title === "string" ? article.title : "Untitled",
+      description: typeof article.description === "string" ? article.description : undefined,
+      url: typeof article.url === "string" ? article.url : null,
+      slug: typeof article.slug === "string" ? article.slug : null,
+      tags: Array.isArray(article.tag_list)
+        ? article.tag_list.filter((tag): tag is string => typeof tag === "string")
+        : [],
+      published: typeof article.published === "boolean" ? article.published : false,
+      createdAt: typeof article.created_at === "string" ? article.created_at : null,
+      updatedAt: typeof article.edited_at === "string" ? article.edited_at : null,
+      views: typeof article.page_views_count === "number" ? article.page_views_count : undefined,
+      likes: typeof article.positive_reactions_count === "number" ? article.positive_reactions_count : undefined,
+      comments: typeof article.comments_count === "number" ? article.comments_count : undefined,
+    };
+  });
 }
 
 function resolvePostPath(file: string): string {
@@ -427,13 +493,42 @@ server.registerTool(
 server.registerTool(
   "list_posts",
   {
-    description: "List dev.io posts",
+    description: "List local offline dev.io Markdown posts",
     inputSchema: {},
   },
   async () => {
     const posts = await listPostFiles();
     return {
       content: [{ type: "text", text: JSON.stringify({ posts }, null, 2) }],
+    };
+  },
+);
+
+server.registerTool(
+  "list_remote_posts",
+  {
+    description: "List posts from your DEV.to account using the configured DEV.to API key",
+    inputSchema: {
+      limit: z.number().int().min(1).max(1000).optional(),
+    },
+  },
+  async ({ limit = 20 }: { limit?: number }) => {
+    const posts = await listRemotePostsFromDevTo(limit);
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(
+            {
+              source: "dev.to",
+              posts,
+              count: posts.length,
+            },
+            null,
+            2,
+          ),
+        },
+      ],
     };
   },
 );
