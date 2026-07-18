@@ -28,6 +28,8 @@ npm run build
 kubectl kustomize deploy/k8s/overlays/local
 kubectl apply --dry-run=client -k deploy/k8s/overlays/local
 docker build -t dev-io-mcp:local .
+helm lint charts/dev-io-mcp
+helm template dev-io-mcp charts/dev-io-mcp --namespace dev-io
 ```
 
 For HTTP mode, verify both health endpoints and send an MCP `initialize` request to `/mcp`.

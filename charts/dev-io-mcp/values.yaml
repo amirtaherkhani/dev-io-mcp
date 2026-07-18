@@ -1,0 +1,143 @@
+replicaCount: 1
+
+image:
+  repository: dev-io-mcp
+  pullPolicy: IfNotPresent
+  tag: local
+  digest: ""
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  automount: false
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+transport:
+  mode: http
+  host: 0.0.0.0
+  port: 3000
+
+service:
+  type: ClusterIP
+  port: 3000
+  annotations: {}
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: dev-io-mcp.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+remote:
+  enabled: false
+  apiBaseUrl: ""
+  existingSecret: ""
+  existingSecretKey: api-token
+  createSecret: false
+  apiToken: ""
+
+persistence:
+  posts:
+    enabled: true
+    mountPath: /app/posts
+    accessModes:
+      - ReadWriteOnce
+    size: 1Gi
+    storageClass: ""
+    annotations: {}
+  data:
+    enabled: true
+    mountPath: /app/data
+    accessModes:
+      - ReadWriteOnce
+    size: 1Gi
+    storageClass: ""
+    annotations: {}
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 80
+  targetMemoryUtilizationPercentage: ""
+
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1
+  maxUnavailable: ""
+
+networkPolicy:
+  enabled: false
+  ingress: []
+  egress: []
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+  fsGroupChangePolicy: OnRootMismatch
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: http
+  initialDelaySeconds: 10
+  periodSeconds: 20
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /readyz
+    port: http
+  initialDelaySeconds: 3
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+startupProbe:
+  httpGet:
+    path: /readyz
+    port: http
+  failureThreshold: 30
+  periodSeconds: 2
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+topologySpreadConstraints: []
+
+extraEnv: []
+extraEnvFrom: []
+
+terminationGracePeriodSeconds: 30

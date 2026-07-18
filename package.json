@@ -17,6 +17,8 @@
     "docker:run": "docker run --rm -p 3000:3000 -v \"$(pwd)/posts:/app/posts\" -v \"$(pwd)/data:/app/data\" dev-io-mcp:local",
     "k8s:render": "kubectl kustomize deploy/k8s/overlays/local",
     "k8s:apply": "kubectl apply -k deploy/k8s/overlays/local",
+    "helm:lint": "helm lint charts/dev-io-mcp",
+    "helm:template": "helm template dev-io-mcp charts/dev-io-mcp --namespace dev-io",
     "lint": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

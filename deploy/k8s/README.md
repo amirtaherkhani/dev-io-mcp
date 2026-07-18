@@ -36,3 +36,18 @@ http://127.0.0.1:3000/mcp
 Push the image to a registry, replace the image in an overlay, and apply the rendered manifests. Do not put `DEV_IO_API_TOKEN` in Git. Inject it through your cluster's Secret manager and add an environment reference to the Deployment.
 
 The default PVCs are intentionally generic. Set a `storageClassName` in a cluster-specific overlay when the cluster does not provide a default storage class.
+
+## Helm
+
+For configurable deployments, use the full Helm chart instead of editing the raw manifests:
+
+```bash
+helm lint ./charts/dev-io-mcp
+helm upgrade --install dev-io-mcp ./charts/dev-io-mcp \
+  --namespace dev-io \
+  --create-namespace \
+  --set image.repository=dev-io-mcp \
+  --set image.tag=local
+```
+
+See [`../../charts/dev-io-mcp/README.md`](../../charts/dev-io-mcp/README.md) for values, Secrets, Ingress, autoscaling, and storage configuration.

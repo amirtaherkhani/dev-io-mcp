@@ -1,0 +1,121 @@
+{{- if and .Values.remote.existingSecret .Values.remote.createSecret }}
+{{- fail "remote.existingSecret and remote.createSecret cannot both be set" }}
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "dev-io-mcp.fullname" . }}
+  labels:
+    {{- include "dev-io-mcp.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "dev-io-mcp.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "dev-io-mcp.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "dev-io-mcp.serviceAccountName" . }}
+      automountServiceAccountToken: {{ .Values.serviceAccount.automount }}
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ .Chart.Name }}
+          image: {{ include "dev-io-mcp.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "dev-io-mcp.fullname" . }}-config
+            {{- with .Values.extraEnvFrom }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- if or (and .Values.remote.enabled .Values.remote.existingSecret) (and .Values.remote.enabled .Values.remote.createSecret) .Values.extraEnv }}
+          env:
+            {{- if and .Values.remote.enabled .Values.remote.existingSecret }}
+            - name: DEV_IO_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.remote.existingSecret }}
+                  key: {{ .Values.remote.existingSecretKey }}
+            {{- else if and .Values.remote.enabled .Values.remote.createSecret }}
+            - name: DEV_IO_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "dev-io-mcp.fullname" . }}-remote
+                  key: {{ .Values.remote.existingSecretKey }}
+            {{- end }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.transport.port }}
+              protocol: TCP
+          livenessProbe:
+            {{- toYaml .Values.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.readinessProbe | nindent 12 }}
+          startupProbe:
+            {{- toYaml .Values.startupProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: posts
+              mountPath: {{ .Values.persistence.posts.mountPath }}
+            - name: data
+              mountPath: {{ .Values.persistence.data.mountPath }}
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: posts
+          {{- if .Values.persistence.posts.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "dev-io-mcp.postsPvc" . }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        - name: data
+          {{- if .Values.persistence.data.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "dev-io-mcp.dataPvc" . }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        - name: tmp
+          emptyDir: {}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

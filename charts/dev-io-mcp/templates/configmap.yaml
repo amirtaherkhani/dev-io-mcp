@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "dev-io-mcp.fullname" . }}-config
+  labels:
+    {{- include "dev-io-mcp.labels" . | nindent 4 }}
+data:
+  NODE_ENV: production
+  MCP_TRANSPORT: {{ .Values.transport.mode | quote }}
+  MCP_HOST: {{ .Values.transport.host | quote }}
+  MCP_PORT: {{ .Values.transport.port | quote }}
+  {{- if .Values.remote.enabled }}
+  DEV_IO_API_BASE_URL: {{ required "remote.apiBaseUrl is required when remote.enabled=true" .Values.remote.apiBaseUrl | quote }}
+  {{- end }}

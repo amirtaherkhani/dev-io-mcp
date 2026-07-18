@@ -1,0 +1,16 @@
+apiVersion: v2
+name: dev-io-mcp
+description: MCP server for publishing AI conversation results as Markdown posts
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+home: https://github.com/amirtaherkhani/dev-io-mcp
+sources:
+  - https://github.com/amirtaherkhani/dev-io-mcp
+keywords:
+  - mcp
+  - claude
+  - codex
+  - dev-io
+maintainers:
+  - name: Amir Taherkhani

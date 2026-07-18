@@ -86,6 +86,22 @@ kubectl -n dev-io port-forward svc/dev-io-mcp 3000:3000
 
 See [`deploy/k8s/README.md`](deploy/k8s/README.md) for registry images, storage classes, and remote-cluster guidance.
 
+### Helm chart
+
+The full configurable Helm chart is under [`charts/dev-io-mcp`](charts/dev-io-mcp):
+
+```bash
+npm run helm:lint
+npm run helm:template
+helm upgrade --install dev-io-mcp ./charts/dev-io-mcp \
+  --namespace dev-io \
+  --create-namespace \
+  --set image.repository=dev-io-mcp \
+  --set image.tag=local
+```
+
+The chart includes persistent volumes, health probes, optional Ingress, HPA, PDB, NetworkPolicy, service account hardening, and remote metrics Secret injection. Read [`charts/dev-io-mcp/README.md`](charts/dev-io-mcp/README.md) before installing.
+
 ## Connect from an MCP host
 
 Use stdio transport. Example Claude or Codex host config:

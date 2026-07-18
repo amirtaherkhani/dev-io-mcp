@@ -1,0 +1,21 @@
+1. The dev.io MCP server is running with Streamable HTTP.
+
+{{- if eq .Values.service.type "ClusterIP" }}
+2. Port-forward it locally:
+
+   kubectl port-forward svc/{{ include "dev-io-mcp.fullname" . }} {{ .Values.service.port }}:{{ .Values.service.port }}
+
+   MCP endpoint: http://127.0.0.1:{{ .Values.service.port }}/mcp
+{{- else }}
+2. Get the service endpoint:
+
+   kubectl get svc {{ include "dev-io-mcp.fullname" . }}
+{{- end }}
+
+3. Check health:
+
+   kubectl get pods -l app.kubernetes.io/instance={{ .Release.Name }}
+
+4. Run the Helm smoke test:
+
+   helm test {{ .Release.Name }}

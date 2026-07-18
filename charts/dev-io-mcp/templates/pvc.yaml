@@ -1,0 +1,43 @@
+{{- if .Values.persistence.posts.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "dev-io-mcp.postsPvc" . }}
+  labels:
+    {{- include "dev-io-mcp.labels" . | nindent 4 }}
+  {{- with .Values.persistence.posts.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  accessModes:
+    {{- toYaml .Values.persistence.posts.accessModes | nindent 4 }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.posts.size }}
+  {{- with .Values.persistence.posts.storageClass }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+{{- end }}
+{{- if .Values.persistence.data.enabled }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "dev-io-mcp.dataPvc" . }}
+  labels:
+    {{- include "dev-io-mcp.labels" . | nindent 4 }}
+  {{- with .Values.persistence.data.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  accessModes:
+    {{- toYaml .Values.persistence.data.accessModes | nindent 4 }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.data.size }}
+  {{- with .Values.persistence.data.storageClass }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+{{- end }}
