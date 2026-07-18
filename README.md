@@ -6,7 +6,7 @@ It focuses on one workflow:
 
 1. Capture an AI conversation summary.
 2. Turn it into a Markdown post.
-3. Store the post locally under `posts/`.
+3. Store the post under the Kubernetes PVC mounted at `posts/`.
 4. Provide a list/read API through MCP resources.
 5. Track post metrics like views, likes, bookmarks, shares, and comments.
 
@@ -20,118 +20,72 @@ It focuses on one workflow:
 - `post_template` resource: reusable Markdown structure
 - `post_metrics` resource: metrics snapshot for all posts
 
-## Install
+## Kubernetes-only deployment
 
 ```bash
-npm install
+npm ci
+npm run lint
 npm run build
 ```
 
-## Run
+The Dockerfile is retained only as the Kubernetes image-build input. There is
+no standalone, Compose, or local MCP runtime.
 
-### Standalone mode
-
-Standalone mode uses MCP stdio and is the default for Claude or Codex launched processes:
-
-```bash
-npm start
-```
-
-### HTTP mode
-
-HTTP mode is used by Docker and Kubernetes deployments:
-
-```bash
-npm run start:http
-```
-
-The HTTP server exposes:
+The Kubernetes server exposes:
 
 - `POST /mcp`: Streamable HTTP MCP endpoint
 - `GET /healthz`: liveness check
 - `GET /readyz`: readiness check
 
-Default address: `http://127.0.0.1:3000/mcp`.
-
-Runtime variables:
+The canonical deployment is the Helm chart:
 
 ```bash
-MCP_TRANSPORT=stdio|http
-MCP_HOST=127.0.0.1
-MCP_PORT=3000
-```
-
-## Docker mode
-
-Build and run the HTTP container with persistent local post and metrics directories:
-
-```bash
-npm run docker:build
-docker compose up
-```
-
-Connect an HTTP-capable MCP client to `http://127.0.0.1:3000/mcp`.
-
-## Kubernetes mode
-
-The Kubernetes deployment uses Streamable HTTP, health probes, a ClusterIP service, and PVCs for `posts/` and `data/`:
-
-```bash
-npm run docker:build
-npm run k8s:render
-npm run k8s:apply
-kubectl -n dev-io rollout status deployment/dev-io-mcp
-kubectl -n dev-io port-forward svc/dev-io-mcp 3000:3000
-```
-
-See [`deploy/k8s/README.md`](deploy/k8s/README.md) for registry images, storage classes, and remote-cluster guidance.
-
-### Helm chart
-
-The full configurable Helm chart is under [`charts/dev-io-mcp`](charts/dev-io-mcp):
-
-```bash
-npm run helm:lint
-npm run helm:template
+helm lint ./charts/dev-io-mcp
 helm upgrade --install dev-io-mcp ./charts/dev-io-mcp \
   --namespace dev-io \
   --create-namespace \
-  --set image.repository=dev-io-mcp \
-  --set image.tag=local
+  --set image.repository=localhost:5001/dev-io-mcp \
+  --set image.tag=20260718-193244 \
+  --set devTo.publish=true \
+  --set devTo.existingSecret=dev-to-api \
+  --set devTo.existingSecretKey=api-key \
+  --set ingress.enabled=true \
+  --set ingress.className=traefik \
+  --set ingress.hosts[0].host=dev-io-mcp.dev.local \
+  --set ingress.tls[0].secretName=local-dev-tls
 ```
 
-The chart includes persistent volumes, health probes, optional Ingress, HPA, PDB, NetworkPolicy, service account hardening, and remote metrics Secret injection. Read [`charts/dev-io-mcp/README.md`](charts/dev-io-mcp/README.md) before installing.
+The chart uses PVCs for `posts/` and `data/`, Traefik for ingress, and the
+existing platform wildcard certificate `local-dev-tls` for HTTPS.
 
-## Connect to Codex and Claude
+MCP address:
 
-The recommended local connection is MCP stdio. The launcher loads the ignored
-`.env` file, starts the built server, and keeps the DEV.to API key out of the
-Codex or Claude configuration.
+```text
+https://dev-io-mcp.dev.local/mcp
+```
+
+For a public deployment, replace `dev-io-mcp.dev.local` with a real DNS name
+and provide a publicly trusted TLS Secret. See [`charts/dev-io-mcp/README.md`](charts/dev-io-mcp/README.md).
+
+## Connect Codex and Claude
+
+Both hosts connect to the Kubernetes HTTPS endpoint. The installers use
+`DEV_IO_MCP_URL` when set, otherwise they use the local domain above.
 
 ```bash
-npm ci
-npm run build
+npm run install:codex
+npm run install:claude
 ```
 
 ### Codex CLI and Codex app
 
-Install the MCP server and the `$dev-io` skill into your Codex home:
+The installer registers the HTTPS URL in Codex:
 
 ```bash
-npm run install:codex
-codex mcp list
+codex mcp add dev-io --url https://dev-io-mcp.dev.local/mcp
 ```
 
-The installer registers this command:
-
-```bash
-codex mcp add dev-io -- /ABSOLUTE/PATH/TO/dev-io-mcp/scripts/run-mcp.sh
-```
-
-Restart Codex after adding the server. Codex uses the `dev-io` tools directly
-and the skill can be invoked as `$dev-io`. Custom `/dev.io` slash commands are
-provided for Claude Code; in Codex, use `$dev-io` or plain language such as
-`publish this conversation as a post`.
+Restart Codex after adding the server. Use `$dev-io` or natural language.
 
 ### Claude Code
 
@@ -144,8 +98,8 @@ npm run install:claude
 If Claude Code is already installed, the installer runs the equivalent of:
 
 ```bash
-claude mcp add --scope user --transport stdio dev-io -- \
-  /ABSOLUTE/PATH/TO/dev-io-mcp/scripts/run-mcp.sh
+claude mcp add --scope user --transport http dev-io \
+  https://dev-io-mcp.dev.local/mcp
 ```
 
 The project command is stored at `.claude/commands/dev.io.md`. In Claude Code,
@@ -156,30 +110,6 @@ if you prefer a JSON config.
 For Claude Desktop on macOS, merge the example's `mcpServers.dev-io` entry into
 `~/Library/Application Support/Claude/claude_desktop_config.json`, then restart
 Claude Desktop.
-
-### Kubernetes HTTP connection
-
-The deployed HTTP server can also be connected to either host while a
-port-forward is running:
-
-```bash
-kubectl port-forward -n dev-io svc/dev-io-mcp 3000:3000
-```
-
-Codex CLI:
-
-```bash
-codex mcp add dev-io-k8s --url http://127.0.0.1:3000/mcp
-```
-
-Claude Code:
-
-```bash
-claude mcp add --scope user --transport http dev-io-k8s http://127.0.0.1:3000/mcp
-```
-
-Use stdio for normal local work. Use the HTTP entry when you specifically want
-the Kubernetes PVC-backed `posts/` and `data/` state.
 
 ### Command examples
 
@@ -240,17 +170,11 @@ tags: [mcp, claude, codex]
 
 ## How it talks to dev.io
 
-The server currently has two modes:
+The Kubernetes deployment stores Markdown posts and local metric events on the
+PVC mounted at `data/`. The HTTP adapter is the boundary for a future remote
+dev.io metrics service and is not enabled by default.
 
-- `local` mode: metrics are stored in `data/post-metrics.json`
-- `remote` mode: set these env vars and the server will POST metric updates to your configured API
-
-```bash
-DEV_IO_API_BASE_URL=https://your-dev-io-domain.example
-DEV_IO_API_TOKEN=your-token-if-needed
-```
-
-The remote sync endpoint is implemented as:
+The optional remote sync endpoint is:
 
 ```text
 POST /api/posts/metrics
@@ -272,11 +196,10 @@ Payload:
 }
 ```
 
-If your `dev.io` site already has an SDK, send me its package name or docs and I can swap the HTTP adapter to the official SDK.
-
-This repository does not claim an official dev.io SDK or public API. The remote adapter is deliberately isolated behind an HTTP contract so it can be replaced when the real dev.io API or SDK is identified. Markdown publishing itself remains local until that contract is provided.
-
-See [`.env.example`](.env.example) for the connection variables.
+This repository does not claim an official dev.io SDK or public API. The
+adapter is deliberately isolated behind an HTTP contract so it can be replaced
+when a real dev.io API or SDK is identified. Markdown publishing remains
+PVC-backed in Kubernetes.
 
 ## Publish to DEV.to
 

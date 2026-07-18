@@ -26,7 +26,7 @@ The maintainer keeps the Markdown format, tool contracts, and folder structure s
 
 ## Runtime operator
 
-The runtime operator builds and verifies standalone, Docker, and Kubernetes modes. The operator owns health probes, image configuration, persistent storage, and rollout checks without changing the MCP tool contract.
+The runtime operator builds the image for Kubernetes and verifies the Helm release, Traefik Ingress, HTTPS, persistent storage, and rollout without changing the MCP tool contract.
 
 ## Suggested conventions
 

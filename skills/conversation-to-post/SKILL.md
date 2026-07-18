@@ -22,14 +22,14 @@ Use this skill when a user asks to publish, summarize, or document an AI convers
 - Use a topic that describes the result, not the model brand.
 - Prefer 2-5 lowercase, stable tags such as `mcp`, `typescript`, `codex`, or `claude`.
 - Never include credentials or unreviewed private conversation content.
-- Publishing means local Markdown creation unless `DEV_TO_PUBLISH=true` is explicitly configured and the verified DEV.to/Forem adapter reports success.
+- Publishing writes to the Kubernetes-backed Markdown volume and optionally publishes to DEV.to when `DEV_TO_PUBLISH=true` is configured and the verified DEV.to/Forem adapter reports success.
 
 ## Example tool intent
 
 ```text
 publish_post({
   title: "Add MCP publishing workflow",
-  summary: "Implemented and verified a stdio MCP server that writes AI conversation results as Markdown posts.",
+  summary: "Implemented and verified a Kubernetes-hosted Streamable HTTP MCP server that writes AI conversation results as Markdown posts.",
   conversation: "Relevant decisions and test evidence...",
   source: "ai-conversation",
   topic: "mcp-publishing",

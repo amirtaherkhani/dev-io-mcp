@@ -1,30 +1,21 @@
 # dev-io-mcp Helm chart
 
-This chart deploys the MCP server in HTTP mode. It is the Kubernetes packaging for the server; standalone Claude/Codex stdio mode remains available through `npm start`.
+This chart is the only supported runtime for the MCP server. It deploys
+Streamable HTTP behind Traefik with PVC-backed post and metrics state.
 
-## Local image
+## Image build
 
-Build the image in the container runtime used by the cluster:
+Build and push the image with the container runtime used by the cluster, then
+deploy an immutable tag with Helm. The repository Dockerfile is not a local
+runtime mode.
 
-```bash
-npm run docker:build
-helm upgrade --install dev-io-mcp ./charts/dev-io-mcp \
-  --namespace dev-io \
-  --create-namespace \
-  --set image.repository=dev-io-mcp \
-  --set image.tag=local
-```
+## Connect through HTTPS
 
-For Rancher Desktop or another local cluster, confirm that the cluster can see the local `dev-io-mcp:local` image. If it cannot, push the image to a registry and set `image.repository` and `image.tag` to that image instead.
+MCP endpoint: `https://dev-io-mcp.dev.local/mcp`
 
-## Connect locally
-
-```bash
-kubectl -n dev-io rollout status deployment/dev-io-mcp
-kubectl -n dev-io port-forward svc/dev-io-mcp 3000:3000
-```
-
-MCP endpoint: `http://127.0.0.1:3000/mcp`
+The default local values use Traefik and the platform-provided wildcard TLS
+Secret `local-dev-tls`. For another cluster, set `ingress.hosts` and
+`ingress.tls` to the cluster's DNS name and TLS Secret.
 
 Run the chart test:
 
@@ -89,7 +80,9 @@ Examples:
 
 ```bash
 # Ingress
---set ingress.enabled=true --set ingress.className=nginx
+--set ingress.enabled=true --set ingress.className=traefik
+--set ingress.hosts[0].host=dev-io-mcp.dev.local
+--set ingress.tls[0].secretName=local-dev-tls
 
 # HPA
 --set autoscaling.enabled=true --set autoscaling.minReplicas=2 --set autoscaling.maxReplicas=5

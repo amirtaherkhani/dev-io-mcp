@@ -24,7 +24,7 @@ Do not change these resource URIs without updating all documentation and host co
 - Keep schemas explicit and validate user-controlled arguments.
 - Preserve the `posts/` path traversal protection.
 - Return MCP `content` with concise, machine-readable JSON for data tools.
-- Use `console.error` only for diagnostics because stdout is the stdio protocol channel.
+- Keep diagnostics on stderr so HTTP protocol responses remain machine-readable.
 - Keep local filesystem behavior independent from the optional remote adapter.
 
 ## Change checklist

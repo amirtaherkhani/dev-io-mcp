@@ -4,7 +4,6 @@ import { createServer as createHttpServer, type IncomingMessage } from "node:htt
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
 
@@ -615,20 +614,11 @@ server.registerResource(
 );
 
 async function main(): Promise<void> {
-  const transportMode = process.env.MCP_TRANSPORT ?? "stdio";
-
-  if (transportMode === "http") {
-    await runHttpServer();
-    return;
+  const transportMode = process.env.MCP_TRANSPORT ?? "http";
+  if (transportMode !== "http") {
+    throw new Error("This deployment is Kubernetes-only; MCP_TRANSPORT must be http");
   }
-
-  if (transportMode !== "stdio") {
-    throw new Error(`Unsupported MCP_TRANSPORT: ${transportMode}`);
-  }
-
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
-  console.error("dev.io MCP server running on stdio");
+  await runHttpServer();
 }
 
 async function runHttpServer(): Promise<void> {

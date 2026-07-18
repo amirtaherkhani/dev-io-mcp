@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "dev-io": {
-      "command": "/ABSOLUTE/PATH/TO/dev-io-mcp/scripts/run-mcp.sh",
-      "args": []
+      "type": "http",
+      "url": "https://dev-io-mcp.dev.local/mcp"
     }
   }
 }

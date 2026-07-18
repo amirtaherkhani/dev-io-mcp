@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This repository contains a local-first TypeScript MCP server for converting Claude or Codex conversation results into Markdown posts under `posts/`.
+This repository contains a Kubernetes-hosted TypeScript MCP server for converting Claude or Codex conversation results into Markdown posts under PVC-backed `posts/` storage.
 
 ## Working rules
 
@@ -20,17 +20,16 @@ This repository contains a local-first TypeScript MCP server for converting Clau
 4. Show or validate the proposed content before calling `publish_post` when the host supports confirmation.
 5. Confirm the resulting Markdown file under `posts/`.
 
-The `publish_post` tool writes locally and can optionally publish to DEV.to when `DEV_TO_PUBLISH=true` is configured. Do not imply that a website post was created without a verified remote API response.
+The `publish_post` tool writes to Kubernetes-backed storage and can optionally publish to DEV.to when `DEV_TO_PUBLISH=true` is configured. Do not imply that a website post was created without a verified remote API response.
 
 DEV.to publishing is a separate explicit opt-in through `DEV_TO_PUBLISH=true`. It targets the official DEV.to/Forem article API, not an assumed `dev.io` API.
 
-## Runtime modes
+## Runtime
 
-- Standalone: default stdio transport with `npm start`.
-- Docker: HTTP transport on port 3000 with `docker compose up`.
-- Kubernetes: HTTP transport behind the `dev-io-mcp` Service; manifests live under `deploy/k8s/`.
+- Kubernetes only: Streamable HTTP behind Traefik at `https://dev-io-mcp.dev.local/mcp`.
+- The Dockerfile is an image-build input for Kubernetes, not a local runtime.
 
-Keep the MCP tool contract identical across all modes. HTTP mode must retain `/healthz`, `/readyz`, and `/mcp`.
+The HTTP deployment must retain `/healthz`, `/readyz`, and `/mcp`.
 
 ## MCP and logging
 

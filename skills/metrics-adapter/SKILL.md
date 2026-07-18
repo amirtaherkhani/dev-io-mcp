@@ -25,6 +25,6 @@ The current adapter sends `POST /api/posts/metrics` with `{ file, metrics }`. Tr
 - Persist local metrics before attempting remote synchronization.
 - Surface non-2xx remote responses as errors.
 - Do not log bearer tokens or conversation content.
-- Test both local mode and configured remote failure behavior.
+- Test the Kubernetes-backed metrics path and configured remote failure behavior.
 - Do not commit `data/post-metrics.json`.
 - Do not commit `data/remote-posts.json`; it is local runtime mapping state.

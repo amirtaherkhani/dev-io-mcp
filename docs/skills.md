@@ -16,15 +16,12 @@ These are the practical skills the project expects from a contributor or agent.
 - `skills/mcp-server-maintenance/SKILL.md`: preserve MCP tools, resources, schemas, and transport behavior.
 - `skills/metrics-adapter/SKILL.md`: maintain local metrics and the optional remote adapter.
 - `skills/verify-mcp-server/SKILL.md`: run static checks and MCP protocol smoke tests.
-- `skills/runtime-modes/SKILL.md`: maintain standalone, HTTP, Docker, and Kubernetes modes.
+- `skills/runtime-modes/SKILL.md`: maintain the Kubernetes-only HTTP deployment and Ingress.
 - `skills/dev-io/SKILL.md`: route `/dev.io` and `$dev-io` commands to MCP tools safely.
 
 ## Runtime modes
 
-- Standalone stdio: `npm start` for Claude/Codex process configuration.
-- HTTP: `MCP_TRANSPORT=http npm start` for networked MCP clients.
-- Docker: `npm run docker:build` and `docker compose up`.
-- Kubernetes: `npm run k8s:render` and `npm run k8s:apply`.
+- Kubernetes: Helm chart with Traefik Ingress, HTTPS, and PVC-backed state.
 
 ## Workflows
 
@@ -38,7 +35,7 @@ These are the practical skills the project expects from a contributor or agent.
 
 - Claude Code: `/dev.io publish ...`, `/dev.io list`, `/dev.io show <file>`, and `/dev.io info <file>`.
 - Codex: `$dev-io publish ...`, `$dev-io list`, `$dev-io show <file>`, and `$dev-io info <file>`.
-- Both hosts can use the same `dev-io` MCP server over stdio or the deployed HTTP endpoint.
+- Both hosts connect to `https://dev-io-mcp.dev.local/mcp`.
 
 ## Quality bar
 
