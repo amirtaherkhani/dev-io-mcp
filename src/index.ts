@@ -1,11 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
-import { createServer as createHttpServer, type IncomingMessage } from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -14,7 +12,6 @@ const projectRoot = path.resolve(__dirname, "..");
 const postsDir = path.join(projectRoot, "posts");
 const dataDir = path.join(projectRoot, "data");
 const metricsFile = path.join(dataDir, "post-metrics.json");
-const remotePostsFile = path.join(dataDir, "remote-posts.json");
 
 type PostMetrics = {
   views: number;
@@ -23,6 +20,31 @@ type PostMetrics = {
   shares: number;
   comments: number;
   updatedAt: string;
+};
+
+type LocalPostSummary = {
+  file: string;
+  title: string;
+  summary: string;
+  author?: string;
+  topic?: string;
+  tags: string[];
+};
+
+type DevToArticle = {
+  id: number | string;
+  title: string;
+  description?: string;
+  url?: string;
+  slug?: string;
+  tags?: string[];
+  published?: boolean;
+  body_markdown?: string;
+  created_at?: string;
+  edited_at?: string;
+  page_views_count?: number;
+  positive_reactions_count?: number;
+  comments_count?: number;
 };
 
 type PublishPostInput = {
@@ -42,49 +64,11 @@ type RemoteDevIoAdapterConfig = {
   token: string | null;
 };
 
-type DevToPublisherConfig = {
+type DevToConfig = {
   enabled: boolean;
   baseUrl: string;
   apiKey: string | null;
   userAgent: string;
-  published: boolean;
-};
-
-type RemotePostLink = {
-  platform: "dev.to";
-  baseUrl: string;
-  articleId: number | string;
-  url: string | null;
-  published: boolean;
-  publishedAt: string;
-};
-
-type RemoteArticleSnapshot = {
-  platform: "dev.to";
-  articleId: number | string;
-  title?: string;
-  url?: string;
-  published?: boolean;
-  views?: number;
-  likes?: number;
-  comments?: number;
-  fetchedAt: string;
-};
-
-type RemotePostListItem = {
-  platform: "dev.to";
-  articleId: number | string;
-  title: string;
-  description?: string;
-  url: string | null;
-  slug: string | null;
-  tags: string[];
-  published: boolean;
-  createdAt: string | null;
-  updatedAt: string | null;
-  views?: number;
-  likes?: number;
-  comments?: number;
 };
 
 function loadRemoteAdapterConfig(): RemoteDevIoAdapterConfig {
@@ -94,16 +78,29 @@ function loadRemoteAdapterConfig(): RemoteDevIoAdapterConfig {
   };
 }
 
-function loadDevToPublisherConfig(): DevToPublisherConfig {
+function loadDevToConfig(): DevToConfig {
   return {
     enabled: process.env.DEV_TO_PUBLISH === "true",
     baseUrl: process.env.DEV_TO_API_BASE_URL ?? "https://dev.to",
     apiKey: process.env.DEV_TO_API_KEY ?? null,
-    userAgent:
-      process.env.DEV_TO_USER_AGENT ??
-      "dev-io-mcp/0.1.0 (https://github.com/amirtaherkhani/dev-io-mcp)",
-    published: process.env.DEV_TO_PUBLISHED !== "false",
+    userAgent: process.env.DEV_TO_USER_AGENT ?? "dev-io-mcp/0.1.0",
   };
+}
+
+function parseFrontMatterMarkdown(text: string): Record<string, string> {
+  const result: Record<string, string> = {};
+  const trimmed = text.trim();
+  const match = trimmed.match(/^---\n([\s\S]*?)\n---/);
+  if (!match) return result;
+
+  for (const line of match[1].split("\n")) {
+    const colon = line.indexOf(":");
+    if (colon < 0) continue;
+    const key = line.slice(0, colon).trim();
+    const value = line.slice(colon + 1).trim();
+    result[key] = value;
+  }
+  return result;
 }
 
 function slugify(value: string): string {
@@ -145,6 +142,30 @@ function renderPost(input: PublishPostInput): string {
   return sections.join("\n");
 }
 
+function sanitizeText(input: string): string {
+  return input.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function getWords(input: string): string[] {
+  return sanitizeText(input).split(" ").filter(Boolean);
+}
+
+function summarizeText(input: string, maxWords = 80): string {
+  const stripped = input.replace(/^---[\s\S]*?---\n/, "").trim().replace(/[#>*_`[\]]/g, "");
+  const words = getWords(stripped);
+  if (!words.length) return "";
+  return words.slice(0, maxWords).join(" ");
+}
+
+function scoreSimilarity(a: string, b: string): number {
+  const setA = new Set(getWords(a));
+  const setB = new Set(getWords(b));
+  if (!setA.size || !setB.size) return 0;
+  let shared = 0;
+  for (const word of setA) if (setB.has(word)) shared++;
+  return shared / Math.max(1, setA.size + setB.size - shared);
+}
+
 async function ensurePostsDir(): Promise<void> {
   await fs.mkdir(postsDir, { recursive: true });
 }
@@ -162,10 +183,43 @@ async function listPostFiles(): Promise<string[]> {
     .sort((a, b) => a.localeCompare(b));
 }
 
-async function listRemotePostsFromDevTo(limit = 100): Promise<RemotePostListItem[]> {
-  const config = loadDevToPublisherConfig();
+async function searchLocalPosts(query: string): Promise<LocalPostSummary[]> {
+  const posts = await listPostFiles();
+  const normalized = query.toLowerCase();
+  const out: LocalPostSummary[] = [];
+
+  for (const file of posts) {
+    const filePath = resolvePostPath(file);
+    const text = await fs.readFile(filePath, "utf8");
+    if (!text.toLowerCase().includes(normalized)) continue;
+    out.push(localSummaryFromContent(file, text));
+  }
+
+  return out;
+}
+
+function localSummaryFromContent(file: string, text: string): LocalPostSummary {
+  const parsed = parseFrontMatterMarkdown(text);
+  const title = parsed.title || file.replace(/\.md$/, "");
+  const rawTags = parsed.tags ? parsed.tags.replace(/^\[/, "").replace(/\]$/, "") : "";
+  return {
+    file,
+    title,
+    summary: parsed.summary || summarizeText(text),
+    author: parsed.author,
+    topic: parsed.topic,
+    tags: rawTags ? rawTags.split(",").map((tag) => tag.trim()).filter(Boolean) : [],
+  };
+}
+
+async function loadRemoteArticles(limit = 100): Promise<DevToArticle[]> {
+  const config = loadDevToConfig();
+  if (!config.enabled) {
+    throw new Error("DEV_TO_PUBLISH must be true to use DEV.to operations");
+  }
+
   if (!config.apiKey) {
-    throw new Error("DEV_TO_API_KEY is required to list remote DEV.to posts");
+    throw new Error("DEV_TO_API_KEY is required for DEV.to operations");
   }
 
   const url = new URL("/api/articles/me", config.baseUrl);
@@ -180,36 +234,94 @@ async function listRemotePostsFromDevTo(limit = 100): Promise<RemotePostListItem
   });
 
   if (!response.ok) {
-    const detail = (await response.text()).replace(/\s+/g, " ").slice(0, 300);
-    throw new Error(`DEV.to list failed: ${response.status} ${response.statusText}${detail ? ` - ${detail}` : ""}`);
+    throw new Error(`DEV.to list failed: ${response.status} ${response.statusText}`);
   }
 
   const payload = (await response.json()) as unknown;
-  if (!Array.isArray(payload)) {
-    return [];
-  }
+  if (!Array.isArray(payload)) return [];
 
-  return payload.map((item) => {
-    const article = item as Record<string, unknown>;
+  return payload.map((row) => {
+    const item = row as Record<string, unknown>;
     return {
-      platform: "dev.to",
-      articleId:
-        typeof article.id === "number" || typeof article.id === "string" ? article.id : "unknown",
-      title: typeof article.title === "string" ? article.title : "Untitled",
-      description: typeof article.description === "string" ? article.description : undefined,
-      url: typeof article.url === "string" ? article.url : null,
-      slug: typeof article.slug === "string" ? article.slug : null,
-      tags: Array.isArray(article.tag_list)
-        ? article.tag_list.filter((tag): tag is string => typeof tag === "string")
+      id: typeof item.id === "number" || typeof item.id === "string" ? item.id : "unknown",
+      title: typeof item.title === "string" ? item.title : "Untitled",
+      description: typeof item.description === "string" ? item.description : undefined,
+      url: typeof item.url === "string" ? item.url : undefined,
+      slug: typeof item.slug === "string" ? item.slug : undefined,
+      tags: Array.isArray(item.tag_list)
+        ? item.tag_list.filter((tag): tag is string => typeof tag === "string")
         : [],
-      published: typeof article.published === "boolean" ? article.published : false,
-      createdAt: typeof article.created_at === "string" ? article.created_at : null,
-      updatedAt: typeof article.edited_at === "string" ? article.edited_at : null,
-      views: typeof article.page_views_count === "number" ? article.page_views_count : undefined,
-      likes: typeof article.positive_reactions_count === "number" ? article.positive_reactions_count : undefined,
-      comments: typeof article.comments_count === "number" ? article.comments_count : undefined,
+      published: typeof item.published === "boolean" ? item.published : false,
+      body_markdown: typeof item.body_markdown === "string" ? item.body_markdown : undefined,
+      created_at: typeof item.created_at === "string" ? item.created_at : undefined,
+      edited_at: typeof item.edited_at === "string" ? item.edited_at : undefined,
+      page_views_count: typeof item.page_views_count === "number" ? item.page_views_count : undefined,
+      positive_reactions_count:
+        typeof item.positive_reactions_count === "number" ? item.positive_reactions_count : undefined,
+      comments_count: typeof item.comments_count === "number" ? item.comments_count : undefined,
     };
   });
+}
+
+async function loadRemoteArticle(articleId: number | string): Promise<DevToArticle> {
+  const config = loadDevToConfig();
+  if (!config.enabled) {
+    throw new Error("DEV_TO_PUBLISH must be true to use DEV.to operations");
+  }
+
+  if (!config.apiKey) {
+    throw new Error("DEV_TO_API_KEY is required for DEV.to operations");
+  }
+
+  const url = new URL(`/api/articles/${articleId}`, config.baseUrl);
+  const response = await fetch(url, {
+    headers: {
+      accept: "application/vnd.forem.api-v1+json",
+      "user-agent": config.userAgent,
+      "api-key": config.apiKey,
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`DEV.to read failed: ${response.status} ${response.statusText}`);
+  }
+
+  const payload = (await response.json()) as DevToArticle;
+  return payload;
+}
+
+async function writeLocalPost(file: string, text: string): Promise<void> {
+  const filePath = resolvePostPath(file);
+  await fs.writeFile(filePath, text, "utf8");
+}
+
+function mergeFrontMatter(text: string, patch: Record<string, string>): string {
+  const match = text.match(/^---\n[\s\S]*?\n---/);
+  if (!match) {
+    return text;
+  }
+
+  const block = match[0];
+  const head = block.replace(/^---|---$/g, "").trimEnd();
+  const body = text.slice(match[0].length);
+  const map = new Map<string, string>();
+  for (const line of head.split("\n")) {
+    const i = line.indexOf(":");
+    if (i < 0) continue;
+    map.set(line.slice(0, i).trim(), line.slice(i + 1).trim());
+  }
+
+  for (const [key, value] of Object.entries(patch)) {
+    map.set(key, value);
+  }
+
+  const next = [
+    "---",
+    ...Array.from(map.entries()).map(([k, v]) => `${k}: ${v}`),
+    "---",
+    body.trimStart(),
+  ].join("\n");
+  return `${next}\n`;
 }
 
 function resolvePostPath(file: string): string {
@@ -245,148 +357,6 @@ async function readAllMetrics(): Promise<Record<string, PostMetrics>> {
 async function writeAllMetrics(metrics: Record<string, PostMetrics>): Promise<void> {
   await ensureDataDir();
   await fs.writeFile(metricsFile, JSON.stringify(metrics, null, 2), "utf8");
-}
-
-async function readRemotePostLinks(): Promise<Record<string, RemotePostLink>> {
-  await ensureDataDir();
-  try {
-    const raw = await fs.readFile(remotePostsFile, "utf8");
-    return JSON.parse(raw) as Record<string, RemotePostLink>;
-  } catch {
-    return {};
-  }
-}
-
-async function writeRemotePostLinks(links: Record<string, RemotePostLink>): Promise<void> {
-  await ensureDataDir();
-  await fs.writeFile(remotePostsFile, JSON.stringify(links, null, 2), "utf8");
-}
-
-function articleUrl(baseUrl: string, article: Record<string, unknown>): string | null {
-  if (typeof article.url === "string") {
-    return article.url;
-  }
-
-  if (typeof article.path === "string") {
-    return new URL(article.path, baseUrl).toString();
-  }
-
-  return null;
-}
-
-async function publishPostToDevTo(
-  fileName: string,
-  input: PublishPostInput,
-  bodyMarkdown: string,
-): Promise<{ published: boolean; mode: string; articleId?: number | string; url?: string | null }> {
-  const config = loadDevToPublisherConfig();
-  if (!config.enabled) {
-    return { published: false, mode: "local" };
-  }
-
-  if (!config.apiKey) {
-    throw new Error("DEV_TO_API_KEY is required when DEV_TO_PUBLISH=true");
-  }
-
-  const tags = (input.tags?.length ? input.tags : ["mcp", "ai", "dev-io"]).slice(0, 4);
-  const response = await fetch(new URL("/api/articles", config.baseUrl), {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      accept: "application/vnd.forem.api-v1+json",
-      "api-key": config.apiKey,
-      "user-agent": config.userAgent,
-    },
-    body: JSON.stringify({
-      article: {
-        title: input.title,
-        body_markdown: bodyMarkdown,
-        published: config.published,
-        description: input.summary.trim().slice(0, 160),
-        tags,
-      },
-    }),
-  });
-
-  const responseText = await response.text();
-  let article: Record<string, unknown>;
-  try {
-    article = JSON.parse(responseText) as Record<string, unknown>;
-  } catch {
-    article = {};
-  }
-
-  if (!response.ok) {
-    const detail = responseText.replace(/\s+/g, " ").slice(0, 300);
-    throw new Error(`DEV.to publish failed: ${response.status} ${response.statusText}${detail ? ` - ${detail}` : ""}`);
-  }
-
-  const articleId = article.id;
-  if (typeof articleId !== "number" && typeof articleId !== "string") {
-    throw new Error("DEV.to publish response did not include an article id");
-  }
-
-  const url = articleUrl(config.baseUrl, article);
-  const links = await readRemotePostLinks();
-  links[fileName] = {
-    platform: "dev.to",
-    baseUrl: config.baseUrl,
-    articleId,
-    url,
-    published: config.published,
-    publishedAt: new Date().toISOString(),
-  };
-  await writeRemotePostLinks(links);
-
-  return { published: true, mode: "dev.to", articleId, url };
-}
-
-async function fetchRemoteArticleSnapshot(fileName: string): Promise<RemoteArticleSnapshot | null> {
-  const links = await readRemotePostLinks();
-  const link = links[fileName];
-  if (!link) {
-    return null;
-  }
-
-  const config = loadDevToPublisherConfig();
-  try {
-    const response = await fetch(new URL(`/api/articles/${link.articleId}`, link.baseUrl), {
-      headers: {
-        accept: "application/vnd.forem.api-v1+json",
-        "user-agent": config.userAgent,
-        ...(config.apiKey ? { "api-key": config.apiKey } : {}),
-      },
-    });
-
-    if (!response.ok) {
-      return {
-        platform: link.platform,
-        articleId: link.articleId,
-        url: link.url ?? undefined,
-        fetchedAt: new Date().toISOString(),
-      };
-    }
-
-    const article = (await response.json()) as Record<string, unknown>;
-    return {
-      platform: link.platform,
-      articleId: link.articleId,
-      title: typeof article.title === "string" ? article.title : undefined,
-      url: articleUrl(link.baseUrl, article) ?? link.url ?? undefined,
-      published: typeof article.published === "boolean" ? article.published : link.published,
-      views: typeof article.page_views_count === "number" ? article.page_views_count : undefined,
-      likes: typeof article.positive_reactions_count === "number" ? article.positive_reactions_count : undefined,
-      comments: typeof article.comments_count === "number" ? article.comments_count : undefined,
-      fetchedAt: new Date().toISOString(),
-    };
-  } catch {
-    return {
-      platform: link.platform,
-      articleId: link.articleId,
-      url: link.url ?? undefined,
-      fetchedAt: new Date().toISOString(),
-    };
-  }
 }
 
 async function getMetrics(file: string): Promise<PostMetrics> {
@@ -442,16 +412,134 @@ async function syncMetricsToRemote(file: string, metrics: PostMetrics): Promise<
   return { synced: true, mode: "remote" };
 }
 
-function createMcpServer(): McpServer {
-  const server = new McpServer({
+async function deleteLocalPost(file: string): Promise<string> {
+  const filePath = resolvePostPath(file);
+  const fileName = path.basename(filePath);
+  await fs.unlink(filePath);
+
+  const metrics = await readAllMetrics();
+  if (metrics[fileName]) {
+    delete metrics[fileName];
+    await writeAllMetrics(metrics);
+  }
+  return fileName;
+}
+
+async function publishPostToDevTo(
+  input: PublishPostInput,
+  bodyMarkdown: string,
+): Promise<{ published: boolean; mode: string; articleId?: number | string; url?: string | null }> {
+  const config = loadDevToConfig();
+  if (!config.enabled) {
+    return { published: false, mode: "local" };
+  }
+
+  if (!config.apiKey) {
+    throw new Error("DEV_TO_API_KEY is required when DEV_TO_PUBLISH=true");
+  }
+
+  const response = await fetch(new URL("/api/articles", config.baseUrl), {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      accept: "application/vnd.forem.api-v1+json",
+      "api-key": config.apiKey,
+      "user-agent": config.userAgent,
+    },
+    body: JSON.stringify({
+      article: {
+        title: input.title,
+        body_markdown: bodyMarkdown,
+        published: true,
+        description: input.summary.trim().slice(0, 160),
+        tags: (input.tags?.length ? input.tags : ["mcp", "ai", "dev-io"]).slice(0, 4),
+      },
+    }),
+  });
+
+  const raw = await response.text();
+  if (!response.ok) {
+    const detail = raw.replace(/\s+/g, " ").slice(0, 300);
+    throw new Error(`DEV.to publish failed: ${response.status} ${response.statusText}${detail ? ` - ${detail}` : ""}`);
+  }
+
+  let payload: Record<string, unknown>;
+  try {
+    payload = JSON.parse(raw) as Record<string, unknown>;
+  } catch {
+    payload = {};
+  }
+  const articleId = payload.id;
+  if (typeof articleId !== "number" && typeof articleId !== "string") {
+    throw new Error("DEV.to publish response did not include an article id");
+  }
+  const url = typeof payload.url === "string" ? payload.url : null;
+
+  return { published: true, mode: "dev.to", articleId, url };
+}
+
+async function updateRemotePost(articleId: number | string, updates: { title?: string; summary?: string; tags?: string[] }): Promise<{
+  ok: boolean;
+  articleId: number | string;
+}> {
+  const config = loadDevToConfig();
+  if (!config.enabled || !config.apiKey) {
+    throw new Error("DEV_TO publish mode and API key are required for remote update");
+  }
+
+  const response = await fetch(new URL(`/api/articles/${articleId}`, config.baseUrl), {
+    method: "PUT",
+    headers: {
+      "content-type": "application/json",
+      accept: "application/vnd.forem.api-v1+json",
+      "api-key": config.apiKey,
+      "user-agent": config.userAgent,
+    },
+    body: JSON.stringify({
+      article: {
+        ...(updates.title ? { title: updates.title } : {}),
+        ...(updates.summary ? { body_markdown: updates.summary } : {}),
+        ...(updates.tags ? { tags: updates.tags } : {}),
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`DEV.to update failed: ${response.status} ${response.statusText}`);
+  }
+
+  return { ok: true, articleId };
+}
+
+async function deleteRemotePost(articleId: number | string): Promise<void> {
+  const config = loadDevToConfig();
+  if (!config.enabled || !config.apiKey) {
+    throw new Error("DEV_TO publish mode and API key are required for remote delete");
+  }
+
+  const response = await fetch(new URL(`/api/articles/${articleId}`, config.baseUrl), {
+    method: "DELETE",
+    headers: {
+      accept: "application/vnd.forem.api-v1+json",
+      "api-key": config.apiKey,
+      "user-agent": config.userAgent,
+    },
+  });
+
+  if (!response.ok && response.status !== 204) {
+    throw new Error(`DEV.to delete failed: ${response.status} ${response.statusText}`);
+  }
+}
+
+const server = new McpServer({
   name: "dev-io",
   version: "0.1.0",
-  });
+});
 
 server.registerTool(
   "publish_post",
   {
-    description: "Write a Markdown post locally and optionally publish it to DEV.to using the official Forem API",
+    description: "Publish a dev.io Markdown post",
     inputSchema: {
       title: z.string(),
       summary: z.string(),
@@ -460,6 +548,7 @@ server.registerTool(
       source: z.string().optional(),
       topic: z.string().optional(),
       tags: z.array(z.string()).optional(),
+      publish_to_remote: z.boolean().optional(),
     },
   },
   async (input: PublishPostInput) => {
@@ -468,7 +557,8 @@ server.registerTool(
     const filePath = path.join(postsDir, fileName);
     const body = renderPost(input);
     await fs.writeFile(filePath, body, "utf8");
-    const remote = await publishPostToDevTo(fileName, input, body);
+    const publishToRemote = (input as PublishPostInput & { publish_to_remote?: boolean }).publish_to_remote ?? false;
+    const remote = publishToRemote ? await publishPostToDevTo(input, body) : { published: false, mode: "local" };
 
     return {
       content: [
@@ -493,42 +583,446 @@ server.registerTool(
 server.registerTool(
   "list_posts",
   {
-    description: "List local offline dev.io Markdown posts",
-    inputSchema: {},
+    description: "List dev.io posts",
+    inputSchema: {
+      source: z.enum(["local", "remote", "both"]).optional(),
+      limit: z.number().int().min(1).max(1000).optional(),
+      query: z.string().optional(),
+    },
   },
-  async () => {
-    const posts = await listPostFiles();
+  async ({
+    source = "both",
+    limit = 20,
+    query,
+  }: {
+    source?: "local" | "remote" | "both";
+    limit?: number;
+    query?: string;
+  }) => {
+    const out: {
+      source: "local" | "remote";
+      posts: Array<{
+        file?: string;
+        title: string;
+        summary?: string;
+        tags?: string[];
+        url?: string;
+        id?: string | number;
+        views?: number;
+        likes?: number;
+        comments?: number;
+      }>;
+    }[] = [];
+
+    const normalized = query?.trim();
+
+    if (source === "local" || source === "both") {
+      const local = await listPostFiles();
+      const selected = normalized
+        ? local.filter((file) => file.toLowerCase().includes(normalized.toLowerCase()))
+        : local;
+      const posts = [];
+      for (const file of selected.slice(0, limit)) {
+        const text = await fs.readFile(resolvePostPath(file), "utf8");
+        posts.push(localSummaryFromContent(file, text));
+      }
+      out.push({ source: "local", posts });
+    }
+
+    if (source === "remote" || source === "both") {
+      const remoteArticles = await loadRemoteArticles(limit);
+      const remotePosts = remoteArticles
+        .filter((article) =>
+          !normalized
+            ? true
+            : [article.title, article.description, article.slug]
+                .filter(Boolean)
+                .map(String)
+                .some((value) => value.toLowerCase().includes(normalized.toLowerCase())),
+        )
+        .slice(0, limit);
+      out.push({
+        source: "remote",
+        posts: remotePosts.map((article) => ({
+          id: article.id,
+          title: article.title,
+          summary: article.description,
+          tags: article.tags,
+          url: article.url,
+          views: article.page_views_count,
+          likes: article.positive_reactions_count,
+          comments: article.comments_count,
+        })),
+      });
+    }
+
     return {
-      content: [{ type: "text", text: JSON.stringify({ posts }, null, 2) }],
+      content: [{ type: "text", text: JSON.stringify({ results: out, mode: source }, null, 2) }],
     };
   },
 );
 
 server.registerTool(
-  "list_remote_posts",
+  "search_post",
   {
-    description: "List posts from your DEV.to account using the configured DEV.to API key",
+    description: "Search posts by keyword across local markdown and remote DEV.to articles",
     inputSchema: {
+      query: z.string(),
+      source: z.enum(["local", "remote", "both"]).optional(),
       limit: z.number().int().min(1).max(1000).optional(),
     },
   },
-  async ({ limit = 20 }: { limit?: number }) => {
-    const posts = await listRemotePostsFromDevTo(limit);
+  async ({
+    query,
+    source = "both",
+    limit = 50,
+  }: {
+    query: string;
+    source?: "local" | "remote" | "both";
+    limit?: number;
+  }) => {
+    const result: Array<{ source: "local"; file: string; score: number } | { source: "remote"; id: string | number; score: number }> = [];
+
+    if (source === "local" || source === "both") {
+      const local = await searchLocalPosts(query);
+      const scored = local
+        .map((summary) => ({
+          source: "local" as const,
+          file: summary.file,
+          score: scoreSimilarity(`${summary.title} ${summary.summary} ${summary.tags.join(" ")}`, query),
+        }))
+        .filter((row) => row.score > 0)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, limit);
+      result.push(...scored);
+    }
+
+    if (source === "remote" || source === "both") {
+      const remote = await loadRemoteArticles(limit);
+      const scoredRemote = remote
+        .map((article) => ({
+          source: "remote" as const,
+          id: article.id,
+          score: scoreSimilarity(`${article.title} ${article.description ?? ""} ${(article.tags ?? []).join(" ")}`, query),
+        }))
+        .filter((row) => row.score > 0)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, limit);
+      result.push(...scoredRemote);
+    }
+
+    return {
+      content: [{ type: "text", text: JSON.stringify({ query, matches: result }, null, 2) }],
+    };
+  },
+);
+
+server.registerTool(
+  "summarize_post",
+  {
+    description: "Summarize a local or remote post",
+    inputSchema: {
+      source: z.enum(["local", "remote"]),
+      file: z.string().optional(),
+      article_id: z.union([z.string(), z.number()]).optional(),
+      max_words: z.number().int().min(20).max(500).optional(),
+    },
+  },
+  async ({
+    source,
+    file,
+    article_id,
+    max_words = 120,
+  }: {
+    source: "local" | "remote";
+    file?: string;
+    article_id?: string | number;
+    max_words?: number;
+  }) => {
+    if (source === "local") {
+      if (!file) throw new Error("file is required for local summaries");
+      const text = await fs.readFile(resolvePostPath(file), "utf8");
+      const parsed = parseFrontMatterMarkdown(text);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                source: "local",
+                file: path.basename(resolvePostPath(file)),
+                title: parsed.title ?? file,
+                summary: summarizeText(text, max_words),
+              },
+              null,
+              2,
+            ),
+          },
+        ],
+      };
+    }
+
+    if (typeof article_id === "undefined") {
+      throw new Error("article_id is required for remote summaries");
+    }
+    const article = await loadRemoteArticle(article_id);
     return {
       content: [
         {
           type: "text",
           text: JSON.stringify(
             {
-              source: "dev.to",
-              posts,
-              count: posts.length,
+              source: "remote",
+              article_id: article.id,
+              title: article.title,
+              summary: summarizeText(article.body_markdown ?? "", max_words),
+              url: article.url,
             },
             null,
             2,
           ),
         },
       ],
+    };
+  },
+);
+
+server.registerTool(
+  "find_related_posts",
+  {
+    description: "Find related local posts based on title/summary/topic against a prompt",
+    inputSchema: {
+      source: z.enum(["local", "remote"]).optional(),
+      file: z.string().optional(),
+      article_id: z.union([z.string(), z.number()]).optional(),
+      prompt: z.string(),
+      limit: z.number().int().min(1).max(100).optional(),
+    },
+  },
+  async ({
+    source = "local",
+    file,
+    article_id,
+    prompt,
+    limit = 20,
+  }: {
+    source?: "local" | "remote";
+    file?: string;
+    article_id?: string | number;
+    prompt: string;
+    limit?: number;
+  }) => {
+    if (source === "local") {
+      if (!file) throw new Error("file is required for local related-post search");
+      const sourceText = await fs.readFile(resolvePostPath(file), "utf8");
+      const items = await Promise.all(
+        (await listPostFiles())
+          .filter((name) => name !== path.basename(file))
+          .map(async (name) => {
+            const text = await fs.readFile(resolvePostPath(name), "utf8");
+            const parsed = localSummaryFromContent(name, text);
+            const score = scoreSimilarity(`${parsed.title} ${parsed.summary} ${parsed.topic ?? ""} ${parsed.tags.join(" ")}`, `${prompt} ${sourceText}`);
+            return { file: name, title: parsed.title, score };
+          }),
+      );
+      const related = items.filter((item) => item.score > 0).sort((a, b) => b.score - a.score).slice(0, limit);
+      return { content: [{ type: "text", text: JSON.stringify({ source: "local", prompt, related }, null, 2) }] };
+    }
+
+    if (!article_id) throw new Error("article_id is required for remote related-post search");
+    const sourceArticle = await loadRemoteArticle(article_id);
+    const articles = await loadRemoteArticles(limit);
+    const related = articles
+      .filter((article) => article.id !== article_id)
+      .map((article) => ({
+        id: article.id,
+        title: article.title,
+        score: scoreSimilarity(`${article.title} ${article.description ?? ""}`, `${prompt} ${sourceArticle.title}`),
+      }))
+      .filter((item) => item.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit);
+    return {
+      content: [{ type: "text", text: JSON.stringify({ source: "remote", prompt, related }, null, 2) }],
+    };
+  },
+);
+
+server.registerTool(
+  "compare_posts",
+  {
+    description: "Compare two local posts or two remote articles",
+    inputSchema: {
+      source: z.enum(["local", "remote"]),
+      file_a: z.string(),
+      file_b: z.string().optional(),
+      article_a: z.union([z.string(), z.number()]).optional(),
+      article_b: z.union([z.string(), z.number()]).optional(),
+    },
+  },
+  async ({
+    source,
+    file_a,
+    file_b,
+    article_a,
+    article_b,
+  }: {
+    source: "local" | "remote";
+    file_a: string;
+    file_b?: string;
+    article_a?: string | number;
+    article_b?: string | number;
+  }) => {
+    if (source === "local") {
+      if (!file_b) throw new Error("file_b is required for local comparison");
+      const [first, second] = await Promise.all([
+        fs.readFile(resolvePostPath(file_a), "utf8"),
+        fs.readFile(resolvePostPath(file_b), "utf8"),
+      ]);
+      const a = localSummaryFromContent(file_a, first);
+      const b = localSummaryFromContent(file_b, second);
+      const similarity = scoreSimilarity(`${a.title} ${a.summary} ${a.tags.join(" ")}`, `${b.title} ${b.summary} ${b.tags.join(" ")}`);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                source: "local",
+                file_a: a.file,
+                file_b: b.file,
+                metrics: {
+                  similarity,
+                  sharedTags: a.tags.filter((tag) => b.tags.includes(tag)),
+                  tagsA: a.tags.length,
+                  tagsB: b.tags.length,
+                },
+              },
+              null,
+              2,
+            ),
+          },
+        ],
+      };
+    }
+
+    if (!article_a || !article_b) {
+      throw new Error("article_a and article_b are required for remote comparison");
+    }
+    const [a, b] = await Promise.all([loadRemoteArticle(article_a), loadRemoteArticle(article_b)]);
+    const combined = `${a.title} ${a.description ?? ""} ${(a.tags ?? []).join(" ")}`;
+    const compareWith = `${b.title} ${b.description ?? ""} ${(b.tags ?? []).join(" ")}`;
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(
+            {
+              source: "remote",
+              article_a: a.id,
+              article_b: b.id,
+              metrics: {
+                similarity: scoreSimilarity(combined, compareWith),
+                sharedTags: (a.tags ?? []).filter((tag) => (b.tags ?? []).includes(tag)),
+              },
+            },
+            null,
+            2,
+          ),
+        },
+      ],
+    };
+  },
+);
+
+server.registerTool(
+  "update_post",
+  {
+    description: "Update local markdown metadata/body or remote DEV.to article",
+    inputSchema: {
+      source: z.enum(["local", "remote"]),
+      file: z.string().optional(),
+      article_id: z.union([z.string(), z.number()]).optional(),
+      title: z.string().optional(),
+      summary: z.string().optional(),
+      tags: z.array(z.string()).optional(),
+      published: z.boolean().optional(),
+    },
+  },
+  async ({
+    source,
+    file,
+    article_id,
+    title,
+    summary,
+    tags,
+  }: {
+    source: "local" | "remote";
+    file?: string;
+    article_id?: string | number;
+    title?: string;
+    summary?: string;
+    tags?: string[];
+    published?: boolean;
+  }) => {
+    if (source === "local") {
+      if (!file) throw new Error("file is required for local update");
+      const current = await fs.readFile(resolvePostPath(file), "utf8");
+      const updated = mergeFrontMatter(current, {
+        ...(title ? { title } : {}),
+        ...(summary ? { summary } : {}),
+        ...(tags ? { tags: `[${tags.join(", ")}]` } : {}),
+      });
+      await writeLocalPost(file, updated);
+      return {
+        content: [{ type: "text", text: JSON.stringify({ ok: true, file: path.basename(resolvePostPath(file)), source: "local" }, null, 2) }],
+      };
+    }
+
+    if (!article_id) throw new Error("article_id is required for remote update");
+    const updates: { title?: string; summary?: string; tags?: string[] } = {};
+    if (title) updates.title = title;
+    if (summary) updates.summary = summary;
+    if (tags) updates.tags = tags;
+
+    const result = await updateRemotePost(article_id, updates);
+    return {
+      content: [{ type: "text", text: JSON.stringify({ ok: true, source: "remote", ...(result as { ok?: boolean; articleId: string | number }) }, null, 2) }],
+    };
+  },
+);
+
+server.registerTool(
+  "delete_post",
+  {
+    description: "Delete local markdown or remote DEV.to article",
+    inputSchema: {
+      source: z.enum(["local", "remote"]),
+      file: z.string().optional(),
+      article_id: z.union([z.string(), z.number()]).optional(),
+    },
+  },
+  async ({
+    source,
+    file,
+    article_id,
+  }: {
+    source: "local" | "remote";
+    file?: string;
+    article_id?: string | number;
+  }) => {
+    if (source === "local") {
+      if (!file) throw new Error("file is required for local delete");
+      const removed = await deleteLocalPost(file);
+      return {
+        content: [{ type: "text", text: JSON.stringify({ ok: true, source: "local", file: removed }, null, 2) }],
+      };
+    }
+
+    if (!article_id) throw new Error("article_id is required for remote delete");
+    await deleteRemotePost(article_id);
+    return {
+      content: [{ type: "text", text: JSON.stringify({ ok: true, source: "remote", article_id }, null, 2) }],
     };
   },
 );
@@ -563,21 +1057,18 @@ server.registerTool(
     await ensurePostsDir();
     const filePath = resolvePostPath(file);
     const stat = await fs.stat(filePath);
-    const fileName = path.basename(filePath);
-    const metrics = await getMetrics(fileName);
-    const remote = await fetchRemoteArticleSnapshot(fileName);
+    const metrics = await getMetrics(path.basename(filePath));
     return {
       content: [
         {
           type: "text",
           text: JSON.stringify(
             {
-              file: fileName,
+              file: path.basename(filePath),
               size: stat.size,
               createdAt: stat.birthtime.toISOString(),
               modifiedAt: stat.mtime.toISOString(),
               metrics,
-              remote,
             },
             null,
             2,
@@ -710,137 +1201,10 @@ server.registerResource(
   },
 );
 
-  return server;
-}
-
 async function main(): Promise<void> {
-  const transportMode = process.env.MCP_TRANSPORT ?? "http";
-  if (transportMode !== "http") {
-    throw new Error("This deployment is Kubernetes-only; MCP_TRANSPORT must be http");
-  }
-  await runHttpServer();
-}
-
-async function runHttpServer(): Promise<void> {
-  const host = process.env.MCP_HOST ?? "0.0.0.0";
-  const port = Number.parseInt(process.env.MCP_PORT ?? process.env.PORT ?? "3000", 10);
-
-  if (!Number.isInteger(port) || port < 1 || port > 65_535) {
-    throw new Error(`Invalid MCP_PORT: ${process.env.MCP_PORT ?? process.env.PORT}`);
-  }
-
-  const sessions = new Map<
-    string,
-    { server: McpServer; transport: StreamableHTTPServerTransport }
-  >();
-
-  const readJsonBody = async (request: IncomingMessage): Promise<unknown> => {
-    const chunks: Buffer[] = [];
-    for await (const chunk of request) {
-      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-    }
-
-    if (!chunks.length) {
-      return undefined;
-    }
-
-    return JSON.parse(Buffer.concat(chunks).toString("utf8"));
-  };
-
-  const httpServer = createHttpServer(async (request, response) => {
-    const requestUrl = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
-
-    if (requestUrl.pathname === "/healthz" && request.method === "GET") {
-      response.writeHead(200, { "content-type": "application/json" });
-      response.end(JSON.stringify({ status: "ok" }));
-      return;
-    }
-
-    if (requestUrl.pathname === "/readyz" && request.method === "GET") {
-      response.writeHead(200, { "content-type": "application/json" });
-      response.end(JSON.stringify({ status: "ready" }));
-      return;
-    }
-
-    if (requestUrl.pathname !== "/mcp") {
-      response.writeHead(404, { "content-type": "application/json" });
-      response.end(JSON.stringify({ error: "not_found" }));
-      return;
-    }
-
-    try {
-      const parsedBody = request.method === "POST" ? await readJsonBody(request) : undefined;
-      const sessionId = request.headers["mcp-session-id"];
-      const session = typeof sessionId === "string" ? sessions.get(sessionId) : undefined;
-
-      if (session) {
-        await session.transport.handleRequest(request, response, parsedBody);
-        return;
-      }
-
-      if (request.method !== "POST" || !isInitializeRequest(parsedBody)) {
-        response.writeHead(400, { "content-type": "application/json" });
-        response.end(
-          JSON.stringify({
-            jsonrpc: "2.0",
-            error: {
-              code: -32000,
-              message: "Bad Request: a valid MCP session is required",
-            },
-            id: null,
-          }),
-        );
-        return;
-      }
-
-      const mcpServer = createMcpServer();
-      let transport: StreamableHTTPServerTransport;
-      transport = new StreamableHTTPServerTransport({
-        sessionIdGenerator: () => randomUUID(),
-        onsessioninitialized: (initializedSessionId) => {
-          sessions.set(initializedSessionId, { server: mcpServer, transport });
-        },
-      });
-      transport.onclose = () => {
-        const initializedSessionId = transport.sessionId;
-        if (initializedSessionId) {
-          sessions.delete(initializedSessionId);
-        }
-      };
-
-      await mcpServer.connect(transport);
-      await transport.handleRequest(request, response, parsedBody);
-    } catch (error) {
-      console.error("dev.io MCP HTTP request failed:", error);
-      if (!response.headersSent) {
-        response.writeHead(500, { "content-type": "application/json" });
-        response.end(JSON.stringify({ error: "internal_server_error" }));
-      }
-    }
-  });
-
-  const shutdown = async (signal: string): Promise<void> => {
-    console.error(`dev.io MCP HTTP server received ${signal}`);
-    for (const [sessionId, session] of sessions) {
-      await session.transport.close();
-      await session.server.close();
-      sessions.delete(sessionId);
-    }
-    await new Promise<void>((resolve, reject) => {
-      httpServer.close((error) => (error ? reject(error) : resolve()));
-    });
-  };
-
-  process.once("SIGINT", () => void shutdown("SIGINT"));
-  process.once("SIGTERM", () => void shutdown("SIGTERM"));
-
-  await new Promise<void>((resolve, reject) => {
-    httpServer.once("error", reject);
-    httpServer.listen(port, host, () => {
-      console.error(`dev.io MCP server running on http://${host}:${port}/mcp`);
-      resolve();
-    });
-  });
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+  console.error("dev.io MCP server running on stdio");
 }
 
 main().catch((error) => {
