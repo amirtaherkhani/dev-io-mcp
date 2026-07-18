@@ -76,6 +76,9 @@ tags: [mcp, claude, codex]
 
 - [`docs/skills.md`](docs/skills.md)
 - [`docs/roles.md`](docs/roles.md)
+- [`AGENTS.md`](AGENTS.md) for Codex-style project instructions
+- [`CLAUDE.md`](CLAUDE.md) for Claude Code project instructions
+- [`skills/`](skills/) for reusable agent workflows
 
 ## How it talks to dev.io
 

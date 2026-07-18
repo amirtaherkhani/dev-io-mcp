@@ -10,6 +10,13 @@ These are the practical skills the project expects from a contributor or agent.
 - File system based content publishing
 - Basic JSON schema validation
 
+## Agent skills
+
+- `skills/conversation-to-post/SKILL.md`: summarize and publish safe conversation results.
+- `skills/mcp-server-maintenance/SKILL.md`: preserve MCP tools, resources, schemas, and transport behavior.
+- `skills/metrics-adapter/SKILL.md`: maintain local metrics and the optional remote adapter.
+- `skills/verify-mcp-server/SKILL.md`: run static checks and MCP protocol smoke tests.
+
 ## Workflows
 
 - Read an AI conversation transcript.
