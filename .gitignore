@@ -2,6 +2,8 @@ node_modules/
 dist/
 .DS_Store
 *.log
+.env
+.mcp.json
 
 # Runtime metrics are local state and may contain private analytics.
 data/post-metrics.json

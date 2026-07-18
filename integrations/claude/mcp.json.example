@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "dev-io": {
+      "command": "/ABSOLUTE/PATH/TO/dev-io-mcp/scripts/run-mcp.sh",
+      "args": []
+    }
+  }
+}

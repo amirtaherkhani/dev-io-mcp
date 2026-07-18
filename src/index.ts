@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
-import { createServer as createHttpServer } from "node:http";
+import { createServer as createHttpServer, type IncomingMessage } from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -640,9 +640,22 @@ async function runHttpServer(): Promise<void> {
   }
 
   const transport = new StreamableHTTPServerTransport({
-    sessionIdGenerator: undefined,
+    sessionIdGenerator: () => randomUUID(),
   });
   await server.connect(transport);
+
+  const readJsonBody = async (request: IncomingMessage): Promise<unknown> => {
+    const chunks: Buffer[] = [];
+    for await (const chunk of request) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+
+    if (!chunks.length) {
+      return undefined;
+    }
+
+    return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  };
 
   const httpServer = createHttpServer(async (request, response) => {
     const requestUrl = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
@@ -666,7 +679,8 @@ async function runHttpServer(): Promise<void> {
     }
 
     try {
-      await transport.handleRequest(request, response);
+      const parsedBody = request.method === "POST" ? await readJsonBody(request) : undefined;
+      await transport.handleRequest(request, response, parsedBody);
     } catch (error) {
       console.error("dev.io MCP HTTP request failed:", error);
       if (!response.headersSent) {

@@ -11,6 +11,7 @@
     "build": "tsc -p tsconfig.json && chmod 755 dist/index.js",
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",
+    "mcp:run": "bash scripts/run-mcp.sh",
     "start:http": "MCP_TRANSPORT=http MCP_HOST=0.0.0.0 node dist/index.js",
     "inspect": "npx -y @modelcontextprotocol/inspector node dist/index.js",
     "docker:build": "docker build -t dev-io-mcp:local .",
@@ -19,7 +20,9 @@
     "k8s:apply": "kubectl apply -k deploy/k8s/overlays/local",
     "helm:lint": "helm lint charts/dev-io-mcp",
     "helm:template": "helm template dev-io-mcp charts/dev-io-mcp --namespace dev-io",
-    "lint": "tsc -p tsconfig.json --noEmit"
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "install:codex": "bash scripts/install-codex.sh",
+    "install:claude": "bash scripts/install-claude.sh"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",

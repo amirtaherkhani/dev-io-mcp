@@ -20,7 +20,7 @@ This repository contains a local-first TypeScript MCP server for converting Clau
 4. Show or validate the proposed content before calling `publish_post` when the host supports confirmation.
 5. Confirm the resulting Markdown file under `posts/`.
 
-The current `publish_post` tool writes locally. The optional remote adapter only synchronizes metrics when `DEV_IO_API_BASE_URL` is configured. Do not imply that a website post was created without a verified remote API response.
+The `publish_post` tool writes locally and can optionally publish to DEV.to when `DEV_TO_PUBLISH=true` is configured. Do not imply that a website post was created without a verified remote API response.
 
 DEV.to publishing is a separate explicit opt-in through `DEV_TO_PUBLISH=true`. It targets the official DEV.to/Forem article API, not an assumed `dev.io` API.
 
@@ -52,3 +52,9 @@ For tool or resource changes, run an MCP initialization and `tools/list` smoke t
 - `skills/metrics-adapter/SKILL.md`
 - `skills/verify-mcp-server/SKILL.md`
 - `skills/runtime-modes/SKILL.md`
+- `skills/dev-io/SKILL.md`
+
+## Host commands
+
+- Claude Code: use `/dev.io publish ...`, `/dev.io list`, `/dev.io show <file>`, or `/dev.io info <file>`.
+- Codex: use `$dev-io publish ...`, `$dev-io list`, `$dev-io show <file>`, or `$dev-io info <file>`.

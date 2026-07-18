@@ -18,6 +18,7 @@
 - Published posts: `posts/*.md`
 - Local metrics: `data/post-metrics.json`
 - Project skills: `skills/*/SKILL.md`
+- Host command skill: `skills/dev-io/SKILL.md`
 - Kubernetes manifests: `deploy/k8s/`
 
 ## MCP contracts
@@ -44,6 +45,7 @@ Keep these resource URIs stable:
 - Keep post reads restricted to `posts/`; preserve the path traversal guard.
 - Do not claim that remote dev.io publishing works unless a real API or SDK contract has been verified.
 - DEV.to publishing is opt-in only through `DEV_TO_PUBLISH=true`; never enable it in tests or deployments without an API key and user approval.
+- Host commands route through MCP: Claude Code uses `/dev.io`; Codex uses `$dev-io` or natural-language requests.
 
 ## Verification
 

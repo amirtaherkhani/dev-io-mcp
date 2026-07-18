@@ -17,6 +17,7 @@ These are the practical skills the project expects from a contributor or agent.
 - `skills/metrics-adapter/SKILL.md`: maintain local metrics and the optional remote adapter.
 - `skills/verify-mcp-server/SKILL.md`: run static checks and MCP protocol smoke tests.
 - `skills/runtime-modes/SKILL.md`: maintain standalone, HTTP, Docker, and Kubernetes modes.
+- `skills/dev-io/SKILL.md`: route `/dev.io` and `$dev-io` commands to MCP tools safely.
 
 ## Runtime modes
 
@@ -32,6 +33,12 @@ These are the practical skills the project expects from a contributor or agent.
 - Convert the result into a publishable dev.io post.
 - Save the post as Markdown.
 - Expose the saved content back through MCP resources.
+
+## Host commands
+
+- Claude Code: `/dev.io publish ...`, `/dev.io list`, `/dev.io show <file>`, and `/dev.io info <file>`.
+- Codex: `$dev-io publish ...`, `$dev-io list`, `$dev-io show <file>`, and `$dev-io info <file>`.
+- Both hosts can use the same `dev-io` MCP server over stdio or the deployed HTTP endpoint.
 
 ## Quality bar
 

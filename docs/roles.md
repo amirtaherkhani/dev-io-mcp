@@ -6,6 +6,12 @@ This file describes the roles used by the dev.io MCP project.
 
 The host is Claude, Codex, or another MCP-compatible client. It invokes tools and displays results to the user.
 
+Host command adapters are included in the repository:
+
+- Codex: `scripts/install-codex.sh` installs the MCP server and `$dev-io` skill.
+- Claude Code: `scripts/install-claude.sh` installs the MCP server and `/dev.io` command.
+- Claude project command: `.claude/commands/dev.io.md`.
+
 ## Publisher
 
 The publisher tool turns a conversation or AI output into a dev.io post and writes it to disk.

@@ -102,20 +102,107 @@ helm upgrade --install dev-io-mcp ./charts/dev-io-mcp \
 
 The chart includes persistent volumes, health probes, optional Ingress, HPA, PDB, NetworkPolicy, service account hardening, and remote metrics Secret injection. Read [`charts/dev-io-mcp/README.md`](charts/dev-io-mcp/README.md) before installing.
 
-## Connect from an MCP host
+## Connect to Codex and Claude
 
-Use stdio transport. Example Claude or Codex host config:
+The recommended local connection is MCP stdio. The launcher loads the ignored
+`.env` file, starts the built server, and keeps the DEV.to API key out of the
+Codex or Claude configuration.
 
-```json
-{
-  "mcpServers": {
-    "dev-io": {
-      "command": "node",
-      "args": ["/ABSOLUTE/PATH/TO/dev.io/dist/index.js"]
-    }
-  }
-}
+```bash
+npm ci
+npm run build
 ```
+
+### Codex CLI and Codex app
+
+Install the MCP server and the `$dev-io` skill into your Codex home:
+
+```bash
+npm run install:codex
+codex mcp list
+```
+
+The installer registers this command:
+
+```bash
+codex mcp add dev-io -- /ABSOLUTE/PATH/TO/dev-io-mcp/scripts/run-mcp.sh
+```
+
+Restart Codex after adding the server. Codex uses the `dev-io` tools directly
+and the skill can be invoked as `$dev-io`. Custom `/dev.io` slash commands are
+provided for Claude Code; in Codex, use `$dev-io` or plain language such as
+`publish this conversation as a post`.
+
+### Claude Code
+
+Install the MCP server and the `/dev.io` command:
+
+```bash
+npm run install:claude
+```
+
+If Claude Code is already installed, the installer runs the equivalent of:
+
+```bash
+claude mcp add --scope user --transport stdio dev-io -- \
+  /ABSOLUTE/PATH/TO/dev-io-mcp/scripts/run-mcp.sh
+```
+
+The project command is stored at `.claude/commands/dev.io.md`. In Claude Code,
+type `/dev.io` and choose a subcommand. Claude Code also supports project MCP
+configuration through `.mcp.json`; use [`integrations/claude/mcp.json.example`](integrations/claude/mcp.json.example)
+if you prefer a JSON config.
+
+For Claude Desktop on macOS, merge the example's `mcpServers.dev-io` entry into
+`~/Library/Application Support/Claude/claude_desktop_config.json`, then restart
+Claude Desktop.
+
+### Kubernetes HTTP connection
+
+The deployed HTTP server can also be connected to either host while a
+port-forward is running:
+
+```bash
+kubectl port-forward -n dev-io svc/dev-io-mcp 3000:3000
+```
+
+Codex CLI:
+
+```bash
+codex mcp add dev-io-k8s --url http://127.0.0.1:3000/mcp
+```
+
+Claude Code:
+
+```bash
+claude mcp add --scope user --transport http dev-io-k8s http://127.0.0.1:3000/mcp
+```
+
+Use stdio for normal local work. Use the HTTP entry when you specifically want
+the Kubernetes PVC-backed `posts/` and `data/` state.
+
+### Command examples
+
+These commands are translated by the installed skill into MCP tool calls:
+
+```text
+/dev.io publish this conversation as "Deploy an MCP Server to Kubernetes"
+/dev.io post the current document with tags mcp, kubernetes
+/dev.io list posts
+/dev.io show deploy-an-mcp-server-123.md
+/dev.io info deploy-an-mcp-server-123.md
+/dev.io like deploy-an-mcp-server-123.md
+```
+
+Tool mapping:
+
+| Command | MCP tool |
+| --- | --- |
+| `publish`, `post` | `publish_post` |
+| `list` | `list_posts` |
+| `read`, `show` | `read_post` |
+| `info`, `stats` | `get_post_info` |
+| `view`, `like`, `bookmark`, `share`, `comment` | `record_post_event` |
 
 ## Post format
 
@@ -148,6 +235,8 @@ tags: [mcp, claude, codex]
 - [`AGENTS.md`](AGENTS.md) for Codex-style project instructions
 - [`CLAUDE.md`](CLAUDE.md) for Claude Code project instructions
 - [`skills/`](skills/) for reusable agent workflows
+- [`skills/dev-io/SKILL.md`](skills/dev-io/SKILL.md) for the shared host command workflow
+- [`.claude/commands/dev.io.md`](.claude/commands/dev.io.md) for the Claude Code slash command
 
 ## How it talks to dev.io
 
