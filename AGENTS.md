@@ -18,6 +18,7 @@
 - Published posts: `posts/*.md`
 - Local metrics: `data/post-metrics.json`
 - Project skills: `skills/*/SKILL.md`
+- Kubernetes manifests: `deploy/k8s/`
 
 ## MCP contracts
 
@@ -53,6 +54,10 @@ npm run build
 ```
 
 For MCP behavior changes, also initialize the stdio process and verify tool discovery with the MCP Inspector or a JSON-RPC smoke test. Do not leave test posts or `data/post-metrics.json` in the worktree.
+
+For HTTP, Docker, or Kubernetes changes, verify `/healthz`, `/readyz`, and `POST /mcp`. Render Kubernetes manifests before applying them.
+
+Read `skills/runtime-modes/SKILL.md` for mode-specific changes.
 
 ## Handoff
 

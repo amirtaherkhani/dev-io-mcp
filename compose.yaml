@@ -1,0 +1,21 @@
+services:
+  dev-io-mcp:
+    build:
+      context: .
+    image: dev-io-mcp:local
+    environment:
+      MCP_TRANSPORT: http
+      MCP_HOST: 0.0.0.0
+      MCP_PORT: 3000
+      DEV_IO_API_BASE_URL: ${DEV_IO_API_BASE_URL:-}
+      DEV_IO_API_TOKEN: ${DEV_IO_API_TOKEN:-}
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./posts:/app/posts
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/readyz').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

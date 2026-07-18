@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
+import { createServer as createHttpServer } from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -424,9 +426,85 @@ server.registerResource(
 );
 
 async function main(): Promise<void> {
+  const transportMode = process.env.MCP_TRANSPORT ?? "stdio";
+
+  if (transportMode === "http") {
+    await runHttpServer();
+    return;
+  }
+
+  if (transportMode !== "stdio") {
+    throw new Error(`Unsupported MCP_TRANSPORT: ${transportMode}`);
+  }
+
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.error("dev.io MCP server running on stdio");
+}
+
+async function runHttpServer(): Promise<void> {
+  const host = process.env.MCP_HOST ?? "0.0.0.0";
+  const port = Number.parseInt(process.env.MCP_PORT ?? process.env.PORT ?? "3000", 10);
+
+  if (!Number.isInteger(port) || port < 1 || port > 65_535) {
+    throw new Error(`Invalid MCP_PORT: ${process.env.MCP_PORT ?? process.env.PORT}`);
+  }
+
+  const transport = new StreamableHTTPServerTransport({
+    sessionIdGenerator: undefined,
+  });
+  await server.connect(transport);
+
+  const httpServer = createHttpServer(async (request, response) => {
+    const requestUrl = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
+
+    if (requestUrl.pathname === "/healthz" && request.method === "GET") {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ status: "ok" }));
+      return;
+    }
+
+    if (requestUrl.pathname === "/readyz" && request.method === "GET") {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ status: server.isConnected() ? "ready" : "starting" }));
+      return;
+    }
+
+    if (requestUrl.pathname !== "/mcp") {
+      response.writeHead(404, { "content-type": "application/json" });
+      response.end(JSON.stringify({ error: "not_found" }));
+      return;
+    }
+
+    try {
+      await transport.handleRequest(request, response);
+    } catch (error) {
+      console.error("dev.io MCP HTTP request failed:", error);
+      if (!response.headersSent) {
+        response.writeHead(500, { "content-type": "application/json" });
+        response.end(JSON.stringify({ error: "internal_server_error" }));
+      }
+    }
+  });
+
+  const shutdown = async (signal: string): Promise<void> => {
+    console.error(`dev.io MCP HTTP server received ${signal}`);
+    await transport.close();
+    await new Promise<void>((resolve, reject) => {
+      httpServer.close((error) => (error ? reject(error) : resolve()));
+    });
+  };
+
+  process.once("SIGINT", () => void shutdown("SIGINT"));
+  process.once("SIGTERM", () => void shutdown("SIGTERM"));
+
+  await new Promise<void>((resolve, reject) => {
+    httpServer.once("error", reject);
+    httpServer.listen(port, host, () => {
+      console.error(`dev.io MCP server running on http://${host}:${port}/mcp`);
+      resolve();
+    });
+  });
 }
 
 main().catch((error) => {

@@ -16,6 +16,14 @@ These are the practical skills the project expects from a contributor or agent.
 - `skills/mcp-server-maintenance/SKILL.md`: preserve MCP tools, resources, schemas, and transport behavior.
 - `skills/metrics-adapter/SKILL.md`: maintain local metrics and the optional remote adapter.
 - `skills/verify-mcp-server/SKILL.md`: run static checks and MCP protocol smoke tests.
+- `skills/runtime-modes/SKILL.md`: maintain standalone, HTTP, Docker, and Kubernetes modes.
+
+## Runtime modes
+
+- Standalone stdio: `npm start` for Claude/Codex process configuration.
+- HTTP: `MCP_TRANSPORT=http npm start` for networked MCP clients.
+- Docker: `npm run docker:build` and `docker compose up`.
+- Kubernetes: `npm run k8s:render` and `npm run k8s:apply`.
 
 ## Workflows
 

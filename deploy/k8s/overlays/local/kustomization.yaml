@@ -1,0 +1,13 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: dev-io
+
+resources:
+  - ../../base
+  - namespace.yaml
+
+images:
+  - name: dev-io-mcp
+    newName: dev-io-mcp
+    newTag: local

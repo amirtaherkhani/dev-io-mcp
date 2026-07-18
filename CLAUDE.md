@@ -22,6 +22,14 @@ This repository contains a local-first TypeScript MCP server for converting Clau
 
 The current `publish_post` tool writes locally. The optional remote adapter only synchronizes metrics when `DEV_IO_API_BASE_URL` is configured. Do not imply that a website post was created without a verified remote API response.
 
+## Runtime modes
+
+- Standalone: default stdio transport with `npm start`.
+- Docker: HTTP transport on port 3000 with `docker compose up`.
+- Kubernetes: HTTP transport behind the `dev-io-mcp` Service; manifests live under `deploy/k8s/`.
+
+Keep the MCP tool contract identical across all modes. HTTP mode must retain `/healthz`, `/readyz`, and `/mcp`.
+
 ## MCP and logging
 
 The public tool names and resource URIs are documented in `AGENTS.md`. Do not write diagnostics with `console.log`; stdout carries MCP protocol messages. Use stderr instead.
@@ -41,3 +49,4 @@ For tool or resource changes, run an MCP initialization and `tools/list` smoke t
 - `skills/mcp-server-maintenance/SKILL.md`
 - `skills/metrics-adapter/SKILL.md`
 - `skills/verify-mcp-server/SKILL.md`
+- `skills/runtime-modes/SKILL.md`

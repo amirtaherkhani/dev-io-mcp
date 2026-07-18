@@ -29,9 +29,62 @@ npm run build
 
 ## Run
 
+### Standalone mode
+
+Standalone mode uses MCP stdio and is the default for Claude or Codex launched processes:
+
 ```bash
 npm start
 ```
+
+### HTTP mode
+
+HTTP mode is used by Docker and Kubernetes deployments:
+
+```bash
+npm run start:http
+```
+
+The HTTP server exposes:
+
+- `POST /mcp`: Streamable HTTP MCP endpoint
+- `GET /healthz`: liveness check
+- `GET /readyz`: readiness check
+
+Default address: `http://127.0.0.1:3000/mcp`.
+
+Runtime variables:
+
+```bash
+MCP_TRANSPORT=stdio|http
+MCP_HOST=127.0.0.1
+MCP_PORT=3000
+```
+
+## Docker mode
+
+Build and run the HTTP container with persistent local post and metrics directories:
+
+```bash
+npm run docker:build
+docker compose up
+```
+
+Connect an HTTP-capable MCP client to `http://127.0.0.1:3000/mcp`.
+
+## Kubernetes mode
+
+The Kubernetes deployment uses Streamable HTTP, health probes, a ClusterIP service, and PVCs for `posts/` and `data/`:
+
+```bash
+npm run docker:build
+npm run k8s:render
+npm run k8s:apply
+kubectl -n dev-io rollout status deployment/dev-io-mcp
+kubectl -n dev-io port-forward svc/dev-io-mcp 3000:3000
+```
+
+See [`deploy/k8s/README.md`](deploy/k8s/README.md) for registry images, storage classes, and remote-cluster guidance.
 
 ## Connect from an MCP host
 

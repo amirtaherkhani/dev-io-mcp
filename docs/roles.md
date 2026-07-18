@@ -18,6 +18,10 @@ The reader tool lists and reads previously published posts.
 
 The maintainer keeps the Markdown format, tool contracts, and folder structure stable over time.
 
+## Runtime operator
+
+The runtime operator builds and verifies standalone, Docker, and Kubernetes modes. The operator owns health probes, image configuration, persistent storage, and rollout checks without changing the MCP tool contract.
+
 ## Suggested conventions
 
 - `author`: the person or agent that owns the post
