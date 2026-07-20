@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
+import { createServer, type IncomingMessage } from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -140,6 +142,16 @@ function renderPost(input: PublishPostInput): string {
 
   sections.push("", "## Metadata", "", `- status: published`, `- id: ${randomUUID()}`);
   return sections.join("\n");
+}
+
+function renderRemotePost(input: PublishPostInput): string {
+  const sections = [input.summary.trim()];
+
+  if (input.conversation?.trim()) {
+    sections.push(input.conversation.trim());
+  }
+
+  return sections.join("\n\n");
 }
 
 function sanitizeText(input: string): string {
@@ -427,7 +439,6 @@ async function deleteLocalPost(file: string): Promise<string> {
 
 async function publishPostToDevTo(
   input: PublishPostInput,
-  bodyMarkdown: string,
 ): Promise<{ published: boolean; mode: string; articleId?: number | string; url?: string | null }> {
   const config = loadDevToConfig();
   if (!config.enabled) {
@@ -449,7 +460,7 @@ async function publishPostToDevTo(
     body: JSON.stringify({
       article: {
         title: input.title,
-        body_markdown: bodyMarkdown,
+        body_markdown: renderRemotePost(input),
         published: true,
         description: input.summary.trim().slice(0, 160),
         tags: (input.tags?.length ? input.tags : ["mcp", "ai", "dev-io"]).slice(0, 4),
@@ -531,6 +542,7 @@ async function deleteRemotePost(articleId: number | string): Promise<void> {
   }
 }
 
+function createMcpServer(): McpServer {
 const server = new McpServer({
   name: "dev-io",
   version: "0.1.0",
@@ -558,7 +570,7 @@ server.registerTool(
     const body = renderPost(input);
     await fs.writeFile(filePath, body, "utf8");
     const publishToRemote = (input as PublishPostInput & { publish_to_remote?: boolean }).publish_to_remote ?? false;
-    const remote = publishToRemote ? await publishPostToDevTo(input, body) : { published: false, mode: "local" };
+    const remote = publishToRemote ? await publishPostToDevTo(input) : { published: false, mode: "local" };
 
     return {
       content: [
@@ -1201,10 +1213,110 @@ server.registerResource(
   },
 );
 
+return server;
+}
+
+async function readJsonBody(request: IncomingMessage): Promise<unknown> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of request) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+
+  if (!chunks.length) {
+    return undefined;
+  }
+
+  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+}
+
 async function main(): Promise<void> {
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
-  console.error("dev.io MCP server running on stdio");
+  const host = process.env.MCP_HOST ?? "0.0.0.0";
+  const port = Number.parseInt(process.env.MCP_PORT ?? process.env.PORT ?? "3000", 10);
+
+  if (!Number.isInteger(port) || port < 1 || port > 65_535) {
+    throw new Error(`Invalid MCP_PORT: ${process.env.MCP_PORT ?? process.env.PORT}`);
+  }
+
+  const sessions = new Map<
+    string,
+    { server: McpServer; transport: StreamableHTTPServerTransport }
+  >();
+
+  const httpServer = createServer(async (request, response) => {
+    const requestUrl = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
+
+    if (request.method === "GET" && requestUrl.pathname === "/healthz") {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ status: "ok" }));
+      return;
+    }
+
+    if (request.method === "GET" && requestUrl.pathname === "/readyz") {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ status: "ready" }));
+      return;
+    }
+
+    if (requestUrl.pathname !== "/mcp") {
+      response.writeHead(404, { "content-type": "application/json" });
+      response.end(JSON.stringify({ error: "not_found" }));
+      return;
+    }
+
+    try {
+      const parsedBody = request.method === "POST" ? await readJsonBody(request) : undefined;
+      const sessionId = request.headers["mcp-session-id"];
+      const session = typeof sessionId === "string" ? sessions.get(sessionId) : undefined;
+
+      if (session) {
+        await session.transport.handleRequest(request, response, parsedBody);
+        return;
+      }
+
+      if (request.method !== "POST" || !isInitializeRequest(parsedBody)) {
+        response.writeHead(400, { "content-type": "application/json" });
+        response.end(
+          JSON.stringify({
+            jsonrpc: "2.0",
+            error: {
+              code: -32000,
+              message: "Bad Request: a valid MCP session is required",
+            },
+            id: null,
+          }),
+        );
+        return;
+      }
+
+      const mcpServer = createMcpServer();
+      let transport: StreamableHTTPServerTransport;
+      transport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: () => randomUUID(),
+        onsessioninitialized: (initializedSessionId) => {
+          sessions.set(initializedSessionId, { server: mcpServer, transport });
+        },
+      });
+      transport.onclose = () => {
+        const initializedSessionId = transport.sessionId;
+        if (initializedSessionId) {
+          sessions.delete(initializedSessionId);
+        }
+      };
+
+      await mcpServer.connect(transport);
+      await transport.handleRequest(request, response, parsedBody);
+    } catch (error) {
+      console.error("dev.io MCP HTTP request failed:", error);
+      if (!response.headersSent) {
+        response.writeHead(500, { "content-type": "application/json" });
+        response.end(JSON.stringify({ error: "internal_server_error" }));
+      }
+    }
+  });
+
+  httpServer.listen(port, host, () => {
+    console.error(`dev.io MCP server running on http://${host}:${port}/mcp`);
+  });
 }
 
 main().catch((error) => {
