@@ -1,6 +1,6 @@
 {
   "name": "dev-io-mcp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "MCP server for turning AI conversations into dev.io markdown posts.",
@@ -12,6 +12,7 @@
     "helm:lint": "helm lint charts/dev-io-mcp",
     "helm:template": "helm template dev-io-mcp charts/dev-io-mcp --namespace dev-io",
     "lint": "tsc -p tsconfig.json --noEmit",
+    "test:comments": "node scripts/smoke-comments.mjs",
     "install:codex": "bash scripts/install-codex.sh",
     "install:claude": "bash scripts/install-claude.sh"
   },

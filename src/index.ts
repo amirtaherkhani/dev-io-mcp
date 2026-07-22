@@ -14,6 +14,7 @@ const projectRoot = path.resolve(__dirname, "..");
 const postsDir = path.join(projectRoot, "posts");
 const dataDir = path.join(projectRoot, "data");
 const metricsFile = path.join(dataDir, "post-metrics.json");
+const commentsFile = path.join(dataDir, "post-comments.json");
 
 type PostMetrics = {
   views: number;
@@ -47,6 +48,19 @@ type DevToArticle = {
   page_views_count?: number;
   positive_reactions_count?: number;
   comments_count?: number;
+};
+
+type StoredPostComment = {
+  id: string;
+  file: string;
+  body: string;
+  author: string;
+  parentId: string | null;
+  createdAt: string;
+};
+
+type PostCommentThread = StoredPostComment & {
+  replies: PostCommentThread[];
 };
 
 type PublishPostInput = {
@@ -85,7 +99,7 @@ function loadDevToConfig(): DevToConfig {
     enabled: process.env.DEV_TO_PUBLISH === "true",
     baseUrl: process.env.DEV_TO_API_BASE_URL ?? "https://dev.to",
     apiKey: process.env.DEV_TO_API_KEY ?? null,
-    userAgent: process.env.DEV_TO_USER_AGENT ?? "dev-io-mcp/0.1.0",
+    userAgent: process.env.DEV_TO_USER_AGENT ?? "dev-io-mcp/0.2.0",
   };
 }
 
@@ -371,6 +385,131 @@ async function writeAllMetrics(metrics: Record<string, PostMetrics>): Promise<vo
   await fs.writeFile(metricsFile, JSON.stringify(metrics, null, 2), "utf8");
 }
 
+async function readAllComments(): Promise<StoredPostComment[]> {
+  await ensureDataDir();
+  try {
+    const raw = await fs.readFile(commentsFile, "utf8");
+    const payload = JSON.parse(raw) as unknown;
+    if (!Array.isArray(payload)) {
+      throw new Error("post comments store must contain an array");
+    }
+
+    return payload.filter((item): item is StoredPostComment => {
+      if (!item || typeof item !== "object") return false;
+      const comment = item as Record<string, unknown>;
+      return (
+        typeof comment.id === "string" &&
+        typeof comment.file === "string" &&
+        typeof comment.body === "string" &&
+        typeof comment.author === "string" &&
+        (typeof comment.parentId === "string" || comment.parentId === null) &&
+        typeof comment.createdAt === "string"
+      );
+    });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
+  }
+}
+
+async function writeAllComments(comments: StoredPostComment[]): Promise<void> {
+  await ensureDataDir();
+  const temporaryFile = `${commentsFile}.${randomUUID()}.tmp`;
+  await fs.writeFile(temporaryFile, JSON.stringify(comments, null, 2), "utf8");
+  await fs.rename(temporaryFile, commentsFile);
+}
+
+function buildCommentThreads(comments: StoredPostComment[]): PostCommentThread[] {
+  const nodes = new Map<string, PostCommentThread>();
+  for (const comment of comments) {
+    nodes.set(comment.id, { ...comment, replies: [] });
+  }
+
+  const roots: PostCommentThread[] = [];
+  for (const comment of comments) {
+    const node = nodes.get(comment.id);
+    if (!node) continue;
+    const parent = comment.parentId ? nodes.get(comment.parentId) : undefined;
+    if (parent && parent.id !== node.id) {
+      parent.replies.push(node);
+    } else {
+      roots.push(node);
+    }
+  }
+  return roots;
+}
+
+async function listLocalPostComments(file: string): Promise<PostCommentThread[]> {
+  const filePath = resolvePostPath(file);
+  await fs.stat(filePath);
+  const fileName = path.basename(filePath);
+  const comments = (await readAllComments()).filter((comment) => comment.file === fileName);
+  return buildCommentThreads(comments);
+}
+
+async function addLocalPostComment(input: {
+  file: string;
+  body: string;
+  author?: string;
+  parentId?: string;
+}): Promise<{ comment: StoredPostComment; metrics: PostMetrics }> {
+  const filePath = resolvePostPath(input.file);
+  await fs.stat(filePath);
+  const fileName = path.basename(filePath);
+  const body = input.body.trim();
+  if (!body) throw new Error("comment body cannot be empty");
+
+  const comments = await readAllComments();
+  if (input.parentId) {
+    const parent = comments.find((comment) => comment.id === input.parentId);
+    if (!parent || parent.file !== fileName) {
+      throw new Error(`Comment ${input.parentId} does not belong to ${fileName}`);
+    }
+  }
+
+  const comment: StoredPostComment = {
+    id: randomUUID(),
+    file: fileName,
+    body,
+    author: input.author?.trim() || "dev.io",
+    parentId: input.parentId ?? null,
+    createdAt: new Date().toISOString(),
+  };
+  comments.push(comment);
+  await writeAllComments(comments);
+  const metrics = await updateMetrics(fileName, "comment");
+  return { comment, metrics };
+}
+
+async function loadRemotePostComments(
+  articleId: string | number,
+  page?: number,
+  perPage = 50,
+): Promise<unknown[]> {
+  const config = loadDevToConfig();
+  const url = new URL("/api/comments", config.baseUrl);
+  url.searchParams.set("a_id", String(articleId));
+  url.searchParams.set("per_page", String(perPage));
+  if (page) url.searchParams.set("page", String(page));
+
+  const response = await fetch(url, {
+    headers: {
+      accept: "application/vnd.forem.api-v1+json",
+      "user-agent": config.userAgent,
+      ...(config.apiKey ? { "api-key": config.apiKey } : {}),
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`DEV.to comments list failed: ${response.status} ${response.statusText}`);
+  }
+  const payload = (await response.json()) as unknown;
+  if (!Array.isArray(payload)) {
+    throw new Error("DEV.to comments response was not an array");
+  }
+  return payload;
+}
+
 async function getMetrics(file: string): Promise<PostMetrics> {
   const metrics = await readAllMetrics();
   return metrics[file] ?? metricsForFile(file);
@@ -433,6 +572,12 @@ async function deleteLocalPost(file: string): Promise<string> {
   if (metrics[fileName]) {
     delete metrics[fileName];
     await writeAllMetrics(metrics);
+  }
+
+  const comments = await readAllComments();
+  const remainingComments = comments.filter((comment) => comment.file !== fileName);
+  if (remainingComments.length !== comments.length) {
+    await writeAllComments(remainingComments);
   }
   return fileName;
 }
@@ -545,7 +690,7 @@ async function deleteRemotePost(articleId: number | string): Promise<void> {
 function createMcpServer(): McpServer {
 const server = new McpServer({
   name: "dev-io",
-  version: "0.1.0",
+  version: "0.2.0",
 });
 
 server.registerTool(
@@ -670,6 +815,120 @@ server.registerTool(
 
     return {
       content: [{ type: "text", text: JSON.stringify({ results: out, mode: source }, null, 2) }],
+    };
+  },
+);
+
+server.registerTool(
+  "list_post_comments",
+  {
+    description: "List threaded comments for a local Markdown post or a remote DEV.to article",
+    inputSchema: {
+      source: z.enum(["local", "remote"]),
+      file: z.string().optional(),
+      article_id: z.union([z.string(), z.number()]).optional(),
+      page: z.number().int().min(1).optional(),
+      per_page: z.number().int().min(1).max(1000).optional(),
+    },
+  },
+  async ({
+    source,
+    file,
+    article_id,
+    page,
+    per_page = 50,
+  }: {
+    source: "local" | "remote";
+    file?: string;
+    article_id?: string | number;
+    page?: number;
+    per_page?: number;
+  }) => {
+    if (source === "local") {
+      if (!file) throw new Error("file is required for local comment listing");
+      const comments = await listLocalPostComments(file);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              { source, file: path.basename(resolvePostPath(file)), comments },
+              null,
+              2,
+            ),
+          },
+        ],
+      };
+    }
+
+    if (typeof article_id === "undefined") {
+      throw new Error("article_id is required for remote comment listing");
+    }
+    const comments = await loadRemotePostComments(article_id, page, per_page);
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({ source, article_id, page: page ?? null, per_page, comments }, null, 2),
+        },
+      ],
+    };
+  },
+);
+
+server.registerTool(
+  "add_post_comment",
+  {
+    description: "Add a top-level comment to a local Markdown post",
+    inputSchema: {
+      file: z.string(),
+      body: z.string().min(1).max(10_000),
+      author: z.string().min(1).max(100).optional(),
+    },
+  },
+  async ({ file, body, author }: { file: string; body: string; author?: string }) => {
+    const result = await addLocalPostComment({ file, body, author });
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({ ok: true, source: "local", ...result }, null, 2),
+        },
+      ],
+    };
+  },
+);
+
+server.registerTool(
+  "reply_post_comment",
+  {
+    description: "Reply to an existing comment on a local Markdown post",
+    inputSchema: {
+      file: z.string(),
+      comment_id: z.string().uuid(),
+      body: z.string().min(1).max(10_000),
+      author: z.string().min(1).max(100).optional(),
+    },
+  },
+  async ({
+    file,
+    comment_id,
+    body,
+    author,
+  }: {
+    file: string;
+    comment_id: string;
+    body: string;
+    author?: string;
+  }) => {
+    const result = await addLocalPostComment({ file, body, author, parentId: comment_id });
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({ ok: true, source: "local", ...result }, null, 2),
+        },
+      ],
     };
   },
 );

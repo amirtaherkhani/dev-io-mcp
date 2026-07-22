@@ -35,6 +35,9 @@ These are the practical skills the project expects from a contributor or agent.
 | Compare | `compare_posts` | local or remote |
 | Update | `update_post` | local or remote |
 | Delete | `delete_post` | local or remote |
+| List comments | `list_post_comments` | local threaded comments or remote DEV.to read-only comments |
+| Add comment | `add_post_comment` | local Markdown post |
+| Reply to comment | `reply_post_comment` | local Markdown post |
 
 ## Runtime modes
 
@@ -55,14 +58,16 @@ These are the practical skills the project expects from a contributor or agent.
 | Claude Code | `/dev.io publish ...` | `publish_post` |
 | Claude Code | `/dev.io list`, `/dev.io search`, `/dev.io summarize`, `/dev.io related`, `/dev.io compare` | `list_posts`, `search_post`, `summarize_post`, `find_related_posts`, `compare_posts` |
 | Claude Code | `/dev.io update`, `/dev.io delete`, `/dev.io read`, `/dev.io info` | `update_post`, `delete_post`, `read_post`, `get_post_info` |
+| Claude Code | `/dev.io comments`, `/dev.io add comment`, `/dev.io reply` | `list_post_comments`, `add_post_comment`, `reply_post_comment` |
 | Codex | `$dev-io publish ...` | `publish_post` |
 | Codex | `$dev-io list`, `$dev-io search`, `$dev-io summarize`, `$dev-io related`, `$dev-io compare` | `list_posts`, `search_post`, `summarize_post`, `find_related_posts`, `compare_posts` |
 | Codex | `$dev-io update`, `$dev-io delete`, `$dev-io show`, `$dev-io info` | `update_post`, `delete_post`, `read_post`, `get_post_info` |
+| Codex | `$dev-io comments`, `$dev-io add comment`, `$dev-io reply` | `list_post_comments`, `add_post_comment`, `reply_post_comment` |
 - Both hosts connect to `https://dev-io-mcp.dev.local/mcp`.
 
 ## Quality bar
 
 - Keep output deterministic.
 - Prefer plain Markdown over custom formats.
-- Avoid hidden side effects outside the `posts/` directory.
+- Keep post content in `posts/` and runtime metrics/comments in `data/`.
 - Return clear file paths and timestamps from tools.

@@ -7,4 +7,5 @@ dist/
 
 # Runtime metrics are local state and may contain private analytics.
 data/post-metrics.json
+data/post-comments.json
 data/remote-posts.json

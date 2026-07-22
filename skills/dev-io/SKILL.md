@@ -26,6 +26,10 @@ Interpret these command forms as follows:
 | `/dev.io compare <a> <b>` | `compare_posts` |
 | `/dev.io update ...` | `update_post` |
 | `/dev.io delete ...` | `delete_post` |
+| `/dev.io comments <file>` | `list_post_comments` with `source=local` |
+| `/dev.io comments remote <article-id>` | `list_post_comments` with `source=remote` |
+| `/dev.io add comment <file> ...` | `add_post_comment` |
+| `/dev.io reply <file> <comment-id> ...` | `reply_post_comment` |
 
 ## Publish/post
 
@@ -111,6 +115,13 @@ Example intent:
 ## Events and metrics
 
 Use `record_post_event` only when the user explicitly asks to record a local event. Valid events are `view`, `like`, `bookmark`, `share`, and `comment`. DEV.to metrics are read from the remote article snapshot; local events are separate and must not be presented as DEV.to reactions.
+
+## Comments
+
+- Use `list_post_comments` with `source=local` and `file` for local threaded comments.
+- Use `list_post_comments` with `source=remote` and `article_id` for public DEV.to comments.
+- Use `add_post_comment` and `reply_post_comment` only for local Markdown posts. Both are write operations and increment the local comments metric.
+- Do not claim DEV.to comment creation or replies. Forem documents remote comment reads, but not API-key comment writes.
 
 ## Safety
 

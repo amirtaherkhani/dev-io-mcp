@@ -10,6 +10,7 @@ This file describes the roles used by the dev.io MCP project.
 | Publisher | Converts conversation output into a publishable post and writes markdown | `publish_post` |
 | Reader | Lists, searches, summarizes, and reads published content | `list_posts`, `search_post`, `summarize_post`, `read_post` |
 | Editor | Updates or removes posts safely in local or remote mode | `update_post`, `delete_post` |
+| Commenter | Reads comment threads and adds or replies to local post comments | `list_post_comments`, `add_post_comment`, `reply_post_comment` |
 | Analyst | Compares topics/posts and finds related content for decision support | `find_related_posts`, `compare_posts` |
 | Metrics Operator | Records local interaction events and validates sync behavior | `record_post_event`, `get_post_info`, `post_metrics` resource |
 | Runtime Operator | Builds/deploys and verifies Kubernetes-only deployment, ingress, and TLS | chart/helm, health checks, deployment checks |

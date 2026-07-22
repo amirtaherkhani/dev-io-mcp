@@ -59,7 +59,7 @@ devTo:
   createSecret: false
   apiKey: ""
   published: true
-  userAgent: dev-io-mcp/0.1.0
+  userAgent: dev-io-mcp/0.2.0
 
 persistence:
   posts:

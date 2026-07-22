@@ -72,6 +72,8 @@ helm upgrade --install dev-io-mcp ./charts/dev-io-mcp \
 
 The Secret must contain a DEV.to API key. `publish_post` will create the local Markdown file, then call `POST /api/articles` from the [Forem API](https://developers.forem.com/api/v0). The returned article ID and URL are stored in `data/remote-posts.json`.
 
+The same DEV.to base URL is used by `list_post_comments` for the documented public comments endpoint. Comment creation and replies remain local because Forem does not provide API-key write endpoints for comments.
+
 For development only, `devTo.createSecret=true` can create a Secret from a private values file. Never commit `devTo.apiKey`.
 
 ## Optional features

@@ -8,7 +8,7 @@ It focuses on one workflow:
 2. Turn it into a Markdown post.
 3. Store the post locally under `posts/`.
 4. Provide a list/read API through MCP resources.
-5. Track post metrics like views, likes, bookmarks, shares, and comments.
+5. Track post metrics and threaded local comments.
 
 ## What it exposes
 
@@ -23,6 +23,9 @@ It focuses on one workflow:
 - `read_post` tool: read a single local post
 - `get_post_info` tool: read local file metadata and stored metrics
 - `record_post_event` tool: increment views, likes, bookmarks, shares, or comments
+- `list_post_comments` tool: list threaded local comments or public DEV.to article comments
+- `add_post_comment` tool: add a comment to a local Markdown post
+- `reply_post_comment` tool: reply to a local Markdown post comment
 - `post_template` resource: reusable Markdown structure
 - `post_metrics` resource: metrics snapshot for all posts
 
@@ -83,6 +86,13 @@ tags: [mcp, claude, codex]
 - [`docs/skills.md`](docs/skills.md)
 - [`docs/roles.md`](docs/roles.md)
 
+## Comments
+
+Local post comments are stored as threaded records in `data/post-comments.json` on the data PVC. Adding a comment or reply also increments the post's local `comments` metric.
+Deleting a local post removes its stored comments and metrics.
+
+`list_post_comments` can read public DEV.to article comments through the documented Forem `GET /api/comments?a_id=<article-id>` endpoint. DEV.to does not expose API-key endpoints for creating comments or replies, so `add_post_comment` and `reply_post_comment` intentionally operate only on local Markdown posts.
+
 ## How it talks to dev.io
 
 The server currently has two modes:
@@ -124,6 +134,9 @@ If your `dev.io` site already has an SDK, send me its package name or docs and I
 - list posts locally: `source: "local"`
 - list posts remotely: `source: "remote"` (requires `DEV_TO_PUBLISH=true`, `DEV_TO_API_KEY`)
 - show post metrics by calling `get_post_info`
+- list local comments with `list_post_comments` using `source: "local"` and `file`
+- list DEV.to comments with `list_post_comments` using `source: "remote"` and `article_id`
+- add and reply to local comments with `add_post_comment` and `reply_post_comment`
 - publish and publish to DEV.to:
 
 ```json
