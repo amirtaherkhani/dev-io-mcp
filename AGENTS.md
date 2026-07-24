@@ -47,6 +47,18 @@ Keep these resource URIs stable:
 - DEV.to publishing is opt-in only through `DEV_TO_PUBLISH=true`; never enable it in tests or deployments without an API key and user approval.
 - Host commands route through MCP: Claude Code uses `/dev.io`; Codex uses `$dev-io` or natural-language requests.
 
+## Local Kubernetes deployment policy
+
+- Local deployments target Rancher Desktop Kubernetes and the local registry at `localhost:5001`.
+- Build and push images with `nerdctl`; do not use Docker Desktop for this project.
+- Use immutable timestamped tags for `localhost:5001/dev-io-mcp`; never deploy `latest` or reuse a tag.
+- Before a deploy, list the images used by all project pods and the images stored for `localhost:5001/dev-io-mcp`. Remove older unused project images before building the new image, but keep the image used by the running workload until the replacement rollout succeeds.
+- Deploy with the existing Helm chart in `charts/dev-io-mcp/`, render it first, and pass the discovered image repository and tag through the chart's supported values.
+- A deployment is complete only after the rollout succeeds and `/healthz`, `/readyz`, and an MCP `initialize` request to `POST /mcp` pass.
+- After successful verification, remove every older `dev-io-mcp` image from the local containerd image store and local registry so only the newly deployed image remains. This project intentionally keeps no previous-image rollback copy locally.
+- Never remove an image referenced by an active pod. If the rollout fails, do not delete the running image or the failed image; retain both for rollback and diagnosis, and report that the one-image retention target was not reached.
+- Image cleanup applies only to `dev-io-mcp`. Never prune all container images or remove images, namespaces, PVCs, databases, ingress, or monitoring resources belonging to other projects.
+
 ## Verification
 
 Run these checks after implementation changes:
